@@ -61,8 +61,8 @@ Face::Face(Drawable *mouth, BoundingRect *mouthPos, Drawable *eyeR,
       eyeblowRPos{eyeblowRPos},
       eyeblowLPos{eyeblowLPos},
       boundingRect{new BoundingRect(0, 0, 320, 240)},
-      sprite{new M5Canvas(&M5.Display)},
-      tmpSpr{new M5Canvas(&M5.Display)} {}
+      sprite{new M5Canvas()},
+      tmpSpr{new M5Canvas()} {}
 
 Face::Face(LGFX_Device* device)
     : Face(new Mouth(50, 90, 4, 60), new BoundingRect(148, 163),

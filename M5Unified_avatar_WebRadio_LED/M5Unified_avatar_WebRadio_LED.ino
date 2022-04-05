@@ -1,57 +1,47 @@
-/*
-  WebRadio Example
-  Very simple HTML app to control web streaming
-  
-  Copyright (C) 2017  Earle F. Philhower, III
 
-  This program is free software: you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation, either version 3 of the License, or
-  (at your option) any later version.
 
-  This program is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+// LEDレベルメータを使用する;
+#define USE_FASTLED
 
-  You should have received a copy of the GNU General Public License
-  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
-#include <M5Unified.h>
-#include <Arduino.h>
-#include <WiFi.h>
-
-//#define USE_SD_UPDATER
-#ifdef USE_SD_UPDATER
-#define SDU_APP_NAME "M5Unified_WebRadio_LED"
-#include <M5StackUpdater.h>
-#endif
-
-#include "AudioFileSourceICYStream.h"
-#include "AudioFileSourceBuffer.h"
-#include "AudioGeneratorMP3.h"
-#include "AudioGeneratorAAC.h"
-#include "AudioOutputI2S.h"
-#include <AudioOutput.h>
-#include <EEPROM.h>
-#include <M5UnitOLED.h>
-#include <M5UnitLCD.h>
-#include <FastLED.h>
-
-LGFX_Device* gfx2 = nullptr;
-
+// アバターをサブディスプレイに表示する;
 #define USE_AVATAR
+
+// ２画面モードで表示内容を入れ替える;
+#define SWAP_DISPLAY
+
+// #define WIFI_SSID "SET YOUR WIFI SSID"
+// #define WIFI_PASS "SET YOUR WIFI PASS"
+
+#include <HTTPClient.h>
+#include <math.h>
+
+/// need ESP8266Audio library. ( URL : https://github.com/earlephilhower/ESP8266Audio/ )
+#include <AudioOutput.h>
+#include <AudioFileSourceICYStream.h>
+#include <AudioFileSource.h>
+#include <AudioFileSourceBuffer.h>
+#include <AudioGeneratorMP3.h>
+#include <AudioOutputI2S.h>
+
+#include <M5UnitLCD.h>
+#include <M5UnitOLED.h>
+#include <M5Unified.h>
+
 #ifdef USE_AVATAR
 #include "Avatar.h"
+#include "faces/DogFace.h"
 #endif
 
-// How many leds in your strip?
-#define NUM_LEDS 10
-#if defined(ARDUINO_M5STACK_Core2)
-#define DATA_PIN 25
-#else
-#define DATA_PIN 15
-#endif
+#ifdef USE_FASTLED
+#include <FastLED.h>
+
+  // How many leds in your strip?
+  #define NUM_LEDS 10
+  #if defined(ARDUINO_M5STACK_Core2)
+  #define DATA_PIN 25
+  #else
+  #define DATA_PIN 15
+  #endif
 
 // Define the array of leds
 CRGB leds[NUM_LEDS];
@@ -60,7 +50,7 @@ CRGB led_table[NUM_LEDS/2] = {CRGB::Blue,CRGB::Green,CRGB::Yellow,CRGB::Orange,C
 void turn_off_led() {
   // Now turn the LED off, then pause
   for(int i=0;i<NUM_LEDS;i++) leds[i] = CRGB::Black;
-  FastLED.show();  
+  FastLED.show();
 }
 
 void fill_led_buff(CRGB color) {
@@ -76,45 +66,43 @@ void clear_led_buff() {
 void level_led(int level1, int level2) {
   if(level1>NUM_LEDS/2) level1 = NUM_LEDS/2;
   if(level2>NUM_LEDS/2) level2 = NUM_LEDS/2;
-  clear_led_buff(); 
+  clear_led_buff();
   for(int i=0;i<level1;i++){
     leds[NUM_LEDS/2-1-i] = led_table[i];
   }
   for(int i=0;i<level2;i++){
     leds[i+NUM_LEDS/2] = led_table[i];
   }
-  FastLED.show();  
+  FastLED.show();
 }
-
-// Custom web server that doesn't need much RAM
-#include "web.h"
-
-// To run, set your ESP8266 build to 160MHz, update the SSID info, and upload.
-
-// Enter your WiFi setup here:
-#ifndef STASSID
-#define STASSID "************"
-#define STAPSK  "************"
+#else
+void turn_off_led() {}
+// void fill_led_buff(CRGB color) {}
+void clear_led_buff() {}
+void level_led(int level1, int level2) {}
 #endif
 
-const char* ssid = STASSID;
-const char* password = STAPSK;
 
-WiFiServer server(80);
-
-AudioGenerator *decoder = NULL;
-AudioFileSourceICYStream *file = NULL;
-AudioFileSourceBuffer *buff = NULL;
-int volume = 100;
-char title[64];
-char url[96];
-char status[64];
-bool newUrl = false;
-bool isAAC = false;
-int retryms = 0;
+LGFX_Device* gfx1 = nullptr;
+LGFX_Device* gfx2 = nullptr;
 
 /// set M5Speaker virtual channel (0-7)
 static constexpr uint8_t m5spk_virtual_channel = 0;
+
+/// set web radio station url
+static constexpr const char* station_list[][2] =
+{
+  {"MAXXED Out"        , "http://149.56.195.94:8015/steam"},
+  {"Asia Dream"        , "http://igor.torontocast.com:1025/;.-mp3"},
+  {"thejazzstream"     , "http://wbgo.streamguys.net/thejazzstream"},
+  {"181-beatles_128k"  , "http://listen.181fm.com/181-beatles_128k.mp3"},
+  {"illstreet-128-mp3" , "http://ice1.somafm.com/illstreet-128-mp3"},
+  {"bootliquor-128-mp3", "http://ice1.somafm.com/bootliquor-128-mp3"},
+  {"dronezone-128-mp3" , "http://ice1.somafm.com/dronezone-128-mp3"},
+  {"Lite Favorites"    , "http://naxos.cdnstream.com:80/1255_128"},
+  {"Classic FM"        , "http://media-ice.musicradio.com:80/ClassicFMMP3"},
+};
+static constexpr const size_t stations = sizeof(station_list) / sizeof(station_list[0]);
 
 class AudioOutputM5Speaker : public AudioOutput
 {
@@ -144,29 +132,37 @@ class AudioOutputM5Speaker : public AudioOutput
     {
       if (_tri_buffer_index)
       {
-        /// If there is no room in the play queue, playRAW will return false, so repeat until true is returned.
-        _m5sound->playRAW(_tri_buffer[_tri_index], _tri_buffer_index, hertz, true, 1, _virtual_ch);
+        _m5sound->playRaw(_tri_buffer[_tri_index], _tri_buffer_index, hertz, true, 1, _virtual_ch);
         _tri_index = _tri_index < 2 ? _tri_index + 1 : 0;
         _tri_buffer_index = 0;
+        ++_update_count;
       }
     }
     virtual bool stop(void) override
     {
       flush();
       _m5sound->stop(_virtual_ch);
+      for (size_t i = 0; i < 3; ++i)
+      {
+        memset(_tri_buffer[i], 0, tri_buf_size * sizeof(int16_t));
+      }
+      ++_update_count;
       return true;
     }
 
     const int16_t* getBuffer(void) const { return _tri_buffer[(_tri_index + 2) % 3]; }
+    const uint32_t getUpdateCount(void) const { return _update_count; }
 
   protected:
     m5::Speaker_Class* _m5sound;
     uint8_t _virtual_ch;
-    static constexpr size_t tri_buf_size = 1536;
+    static constexpr size_t tri_buf_size = 640;
     int16_t _tri_buffer[3][tri_buf_size];
     size_t _tri_buffer_index = 0;
     size_t _tri_index = 0;
+    size_t _update_count = 0;
 };
+
 
 #define FFT_SIZE 256
 class fft_t
@@ -258,8 +254,15 @@ public:
   }
 };
 
+static constexpr const int preallocateBufferSize = 5 * 1024;
+static constexpr const int preallocateCodecSize = 29192; // MP3 codec max mem needed
+static void* preallocateBuffer = nullptr;
+static void* preallocateCodec = nullptr;
 static constexpr size_t WAVE_SIZE = 320;
 static AudioOutputM5Speaker out(&M5.Speaker, m5spk_virtual_channel);
+static AudioGenerator *decoder = nullptr;
+static AudioFileSourceICYStream *file = nullptr;
+static AudioFileSourceBuffer *buff = nullptr;
 static fft_t fft;
 static bool fft_enabled = false;
 static bool wave_enabled = false;
@@ -269,9 +272,76 @@ static int16_t wave_y[WAVE_SIZE];
 static int16_t wave_h[WAVE_SIZE];
 static int16_t raw_data[WAVE_SIZE * 2];
 static int header_height = 0;
-static size_t fileindex = 0;
+static size_t station_index = 0;
+static char stream_title[128] = { 0 };
+static const char* meta_text[2] = { nullptr, stream_title };
+static const size_t meta_text_num = sizeof(meta_text) / sizeof(meta_text[0]);
+static uint8_t meta_mod_bits = 0;
+static volatile size_t playindex = ~0u;
 
-uint32_t bgcolor(LGFX_Device* gfx, int y)
+static void MDCallback(void *cbData, const char *type, bool isUnicode, const char *string)
+{
+  (void)cbData;
+  if ((strcmp(type, "StreamTitle") == 0) && (strcmp(stream_title, string) != 0))
+  {
+    strncpy(stream_title, string, sizeof(stream_title));
+    meta_mod_bits |= 2;
+  }
+}
+
+static void stop(void)
+{
+  if (decoder) {
+    decoder->stop();
+    delete decoder;
+    decoder = nullptr;
+  }
+
+  if (buff) {
+    buff->close();
+    delete buff;
+    buff = nullptr;
+  }
+  if (file) {
+    file->close();
+    delete file;
+    file = nullptr;
+  }
+  out.stop();
+}
+
+static void play(size_t index)
+{
+  playindex = index;
+}
+
+static void decodeTask(void*)
+{
+  for (;;)
+  {
+    delay(1);
+    if (playindex != ~0u)
+    {
+      auto index = playindex;
+      playindex = ~0u;
+      stop();
+      meta_text[0] = station_list[index][0];
+      stream_title[0] = 0;
+      meta_mod_bits = 3;
+      file = new AudioFileSourceICYStream(station_list[index][1]);
+      file->RegisterMetadataCB(MDCallback, (void*)"ICY");
+      buff = new AudioFileSourceBuffer(file, preallocateBuffer, preallocateBufferSize);
+      decoder = new AudioGeneratorMP3(preallocateCodec, preallocateCodecSize);
+      decoder->begin(buff, &out);
+    }
+    if (decoder && decoder->isRunning())
+    {
+      if (!decoder->loop()) { decoder->stop(); }
+    }
+  }
+}
+
+static uint32_t bgcolor(LGFX_Device* gfx, int y)
 {
   auto h = gfx->height();
   auto dh = h - header_height;
@@ -287,7 +357,7 @@ uint32_t bgcolor(LGFX_Device* gfx, int y)
   return gfx->color888(v + 2, v, v + 6);
 }
 
-void gfxSetup(LGFX_Device* gfx)
+static void gfxSetup(LGFX_Device* gfx)
 {
   if (gfx == nullptr) { return; }
   if (gfx->width() < gfx->height())
@@ -296,12 +366,12 @@ void gfxSetup(LGFX_Device* gfx)
   }
   gfx->setFont(&fonts::lgfxJapanGothic_12);
   gfx->setEpdMode(epd_mode_t::epd_fastest);
-  gfx->setCursor(0, 8);
-  gfx->println("M5Stack Web Radio");
   gfx->setTextWrap(false);
+  gfx->setCursor(0, 8);
+  gfx->println("WebRadio player");
   gfx->fillRect(0, 6, gfx->width(), 2, TFT_BLACK);
 
-  header_height = 45;
+  header_height = (gfx->height() > 80) ? 33 : 21;
   fft_enabled = !gfx->isEPD();
   if (fft_enabled)
   {
@@ -328,21 +398,84 @@ void gfxSetup(LGFX_Device* gfx)
 void gfxLoop(LGFX_Device* gfx)
 {
   if (gfx == nullptr) { return; }
-
-  if (!gfx->displayBusy())
-  { // draw volume bar
-    static int px;
-    uint8_t v = M5.Speaker.getChannelVolume(m5spk_virtual_channel);
-    int x = v * (gfx->width()) >> 8;
-    if (px != x)
+  if (header_height > 32)
+  {
+    if (meta_mod_bits)
     {
-      gfx->fillRect(x, 6, px - x, 2, px < x ? 0xAAFFAAu : 0u);
+      gfx->startWrite();
+      for (int id = 0; id < meta_text_num; ++id)
+      {
+        if (0 == (meta_mod_bits & (1<<id))) { continue; }
+        meta_mod_bits &= ~(1<<id);
+        size_t y = id * 12;
+        if (y+12 >= header_height) { continue; }
+        gfx->setCursor(4, 8 + y);
+        gfx->fillRect(0, 8 + y, gfx->width(), 12, gfx->getBaseColor());
+        gfx->print(meta_text[id]);
+        gfx->print(" "); // Garbage data removal when UTF8 characters are broken in the middle.
+      }
       gfx->display();
-      px = x;
+      gfx->endWrite();
+    }
+  }
+  else
+  {
+    static int title_x;
+    static int title_id;
+    static int wait = INT16_MAX;
+
+    if (meta_mod_bits)
+    {
+      if (meta_mod_bits & 1)
+      {
+        title_x = 4;
+        title_id = 0;
+        gfx->fillRect(0, 8, gfx->width(), 12, gfx->getBaseColor());
+      }
+      meta_mod_bits = 0;
+      wait = 0;
+    }
+
+    if (--wait < 0)
+    {
+      int tx = title_x;
+      int tid = title_id;
+      wait = 3;
+      gfx->startWrite();
+      uint_fast8_t no_data_bits = 0;
+      do
+      {
+        if (tx == 4) { wait = 255; }
+        gfx->setCursor(tx, 8);
+        const char* meta = meta_text[tid];
+        if (meta[0] != 0)
+        {
+          gfx->print(meta);
+          gfx->print("  /  ");
+          tx = gfx->getCursorX();
+          if (++tid == meta_text_num) { tid = 0; }
+          if (tx <= 4)
+          {
+            title_x = tx;
+            title_id = tid;
+          }
+        }
+        else
+        {
+          if ((no_data_bits |= 1 << tid) == ((1 << meta_text_num) - 1))
+          {
+            break;
+          }
+          if (++tid == meta_text_num) { tid = 0; }
+        }
+      } while (tx < gfx->width());
+      --title_x;
+      gfx->display();
+      gfx->endWrite();
     }
   }
 
-  if (fft_enabled && !gfx->displayBusy() && M5.Speaker.isPlaying(m5spk_virtual_channel) > 1)
+  if (fft_enabled)
   {
     static int prev_x[2];
     static int peak_x[2];
@@ -350,10 +483,10 @@ void gfxLoop(LGFX_Device* gfx)
     auto buf = out.getBuffer();
     if (buf)
     {
-      level_led(abs(buf[1])*10/INT16_MAX,abs(buf[0])*10/INT16_MAX);
       memcpy(raw_data, buf, WAVE_SIZE * 2 * sizeof(int16_t)); // stereo data copy
       gfx->startWrite();
 
+      int32_t levels[2];
       // draw stereo level meter
       for (size_t i = 0; i < 2; ++i)
       {
@@ -363,6 +496,7 @@ void gfxLoop(LGFX_Device* gfx)
           uint32_t lv = abs(raw_data[j]);
           if (level < lv) { level = lv; }
         }
+        levels[i] = level;
 
         int32_t x = (level * gfx->width()) / INT16_MAX;
         int32_t px = prev_x[i];
@@ -388,6 +522,7 @@ void gfxLoop(LGFX_Device* gfx)
         }
       }
       gfx->display();
+      level_led(levels[0]*8/INT16_MAX,levels[1]*8/INT16_MAX);
 
       // draw FFT level meter
       fft.exec(raw_data);
@@ -483,321 +618,21 @@ void gfxLoop(LGFX_Device* gfx)
       gfx->endWrite();
     }
   }
-}
 
-// Get the Split String Value Used for Band or Track
-String getValue(String data, char separator, int index) {
-  int found = 0;
-  int strIndex[] = {0, -1};
-  int maxIndex = data.length() - 1;
-
-  for (int i = 0; i <= maxIndex && found <= index; i++) {
-    if (data.charAt(i) == separator || i == maxIndex) {
-      found++;
-      strIndex[0] = strIndex[1] + 1;
-      strIndex[1] = (i == maxIndex) ? i + 1 : i;
-    }
-  }
-  return found > index ? data.substring(strIndex[0], strIndex[1]) : "";
-}
-
- void gfxSetup1(LGFX_Device* gfx)
-{
-  header_height = 46;
-  fft_enabled = !gfx->isEPD();
-  if (fft_enabled)
-  {
-    for (int y = header_height; y < gfx->height(); ++y)
+  if (!gfx->displayBusy())
+  { // draw volume bar
+    static int px;
+    uint8_t v = M5.Speaker.getChannelVolume(m5spk_virtual_channel);
+    int x = v * (gfx->width()) >> 8;
+    if (px != x)
     {
-      gfx->drawFastHLine(0, y, gfx->width(), bgcolor(gfx, y));
+      gfx->fillRect(x, 6, px - x, 2, px < x ? 0xAAFFAAu : 0u);
+      gfx->display();
+      px = x;
     }
   }
-  for (int x = 0; x < (FFT_SIZE/2)+1; ++x)
-  {
-    prev_y[x] = INT16_MAX;
-    peak_y[x] = INT16_MAX;
-  }
-  for (int x = 0; x < WAVE_SIZE; ++x)
-  {
-    wave_y[x] = gfx->height();
-    wave_h[x] = 0;
-  }
 }
 
-const int stations = 9;// Change Number here if you add feeds!
-int currentStationNumber = 0;
-char * stationList[stations][2] = {
-  {"Classic FM", "http://media-ice.musicradio.com:80/ClassicFMMP3"},
-  {"Asia Dream", "https://igor.torontocast.com:1025/;.-mp3"},
-  {"MAXXED Out", "http://149.56.195.94:8015/steam"},
-  {"thejazzstream", "http://wbgo.streamguys.net/thejazzstream"},
-  {"181-beatles_128k", "http://listen.181fm.com/181-beatles_128k.mp3"},
-  {"illstreet-128-mp3", "http://ice1.somafm.com/illstreet-128-mp3"},
-  {"bootliquor-128-mp3", "http://ice1.somafm.com/bootliquor-128-mp3"},
-  {"SomaFM", "http://ice2.somafm.com/christmas-128-mp3"},
-//  {"Charlie FM", "http://24083.live.streamtheworld.com:80/KYCHFM_SC"},
-//  {"Orig. Top 40", "http://ais-edge09-live365-dal02.cdnstream.com/a25710"},
-//  {"Smooth Jazz", "http://sj32.hnux.com/stream?type=http&nocache=3104"},
-//  {"Smooth Lounge", "http://sl32.hnux.com/stream?type=http&nocache=1257"},
-//  {"KPop Way Radio", "http://streamer.radio.co/s06b196587/listen"},
-  {"Lite Favorites", "http://naxos.cdnstream.com:80/1255_128"}
-};
-
-void MDCallback(void *cbData, const char *type, bool isUnicode, const char *string)
-{
-  (void)cbData;
-  if (string[0] == 0) { return; }
-  if (strcmp(type, "eof") == 0)
-  {
-    M5.Display.display();
-    return;
-  }
-
-  const char *ptr = reinterpret_cast<const char *>(cbData);
-  (void) isUnicode; // Punt this ball for now
-  (void) ptr;
-  if (strstr_P(type, PSTR("Title"))) { 
-    strncpy(title, string, sizeof(title));
-    title[sizeof(title)-1] = 0;
-  } else {
-    // Who knows what to do?  Not me!
-  }
-  // Note that the type and string may be in PROGMEM, so copy them to RAM for printf
-  char s1[32], s2[64];
-  strncpy_P(s1, type, sizeof(s1));
-  s1[sizeof(s1) - 1] = 0;
-  strncpy_P(s2, string, sizeof(s2));
-  s2[sizeof(s2) - 1] = 0;
-//printf("s1=%s\r\n",s1);
-//printf("s2=%s\r\n",s2);
-  String band  = getValue(s2, '-', 0);
-  band.trim();
-  String track = getValue(s2, '-', 1);
-  track.trim();
- 
-  M5.Display.setCursor(0, 21 ); 
-  int y = M5.Display.getCursorY();
-//  printf("y=%d\r\n",y);
-  if (y+1 >= header_height) { return; }
-  M5.Display.fillRect(0, y, M5.Display.width(), 12, M5.Display.getBaseColor());
-//  M5.Display.printf("%s: ", type);
-//  M5.Display.println(string);
-  M5.Display.print(band + " : ");
-  M5.Display.println(track);
-  M5.Display.setCursor(0, y+12);
-  gfxSetup1(&M5.Display);
-}
-
-typedef struct {
-  char url[96];
-  bool isAAC;
-  int16_t volume;
-  int16_t checksum;
-} Settings;
-
-// C++11 multiline string constants are neato...
-static const char HEAD[] PROGMEM = R"KEWL(
-<head>
-<title>M5Stack Web Radio</title>
-<script type="text/javascript">
-  function updateTitle() {
-    var x = new XMLHttpRequest();
-    x.open("GET", "title");
-    x.onload = function() { document.getElementById("titlespan").innerHTML=x.responseText; setTimeout(updateTitle, 5000); }
-    x.onerror = function() { setTimeout(updateTitle, 5000); }
-    x.send();
-  }
-  setTimeout(updateTitle, 1000);
-  function showValue(n) {
-    document.getElementById("volspan").innerHTML=n;
-    var x = new XMLHttpRequest();
-    x.open("GET", "setvol?vol="+n);
-    x.send();
-  }
-  function updateStatus() {var x = new XMLHttpRequest();
-    x.open("GET", "status");
-    x.onload = function() { document.getElementById("statusspan").innerHTML=x.responseText; setTimeout(updateStatus, 5000); }
-    x.onerror = function() { setTimeout(updateStatus, 5000); }
-    x.send();
-  }
-  setTimeout(updateStatus, 2000);
-</script>
-</head>)KEWL";
-
-static const char BODY[] PROGMEM = R"KEWL(
-<body>
-M5Stack Web Radio!
-<hr>
-Currently Playing: <span id="titlespan">%s</span><br>
-Volume: <input type="range" name="vol" min="1" max="150" steps="10" value="%d" onchange="showValue(this.value)"/> <span id="volspan">%d</span>%%
-<hr>
-Status: <span id="statusspan">%s</span>
-<hr>
-<form action="changeurl" method="GET">
-Current URL: %s<br>
-Change URL: <input type="text" name="url">
-<select name="type"><option value="mp3">MP3</option><option value="aac">AAC</option></select>
-<input type="submit" value="Change"></form>
-<form action="stop" method="POST"><input type="submit" value="Stop"></form>
-</body>)KEWL";
-
-void HandleIndex(WiFiClient *client)
-{
-  char buff[sizeof(BODY) + sizeof(title) + sizeof(status) + sizeof(url) + 3*2];
-  
-  Serial.printf_P(PSTR("Sending INDEX...Free mem=%d\n"), ESP.getFreeHeap());
-  WebHeaders(client, NULL);
-  WebPrintf(client, DOCTYPE);
-  client->write_P( PSTR("<html>"), 6 );
-  client->write_P( HEAD, strlen_P(HEAD) );
-  sprintf_P(buff, BODY, title, volume, volume, status, url);
-  client->write(buff, strlen(buff) );
-  client->write_P( PSTR("</html>"), 7 );
-  Serial.printf_P(PSTR("Sent INDEX...Free mem=%d\n"), ESP.getFreeHeap());
-}
-
-void HandleStatus(WiFiClient *client)
-{
-  WebHeaders(client, NULL);
-  client->write(status, strlen(status));
-}
-
-void HandleTitle(WiFiClient *client)
-{
-  WebHeaders(client, NULL);
-  client->write(title, strlen(title));
-}
-
-void HandleVolume(WiFiClient *client, char *params)
-{
-  char *namePtr;
-  char *valPtr;
-  
-  while (ParseParam(&params, &namePtr, &valPtr)) {
-    ParamInt("vol", volume);
-  }
-  Serial.printf_P(PSTR("Set volume: %d\n"), volume);
-//  out.SetGain(((float)volume)/100.0);
-  M5.Speaker.setChannelVolume(m5spk_virtual_channel, (int)(((float)volume)/150.0*255.0));
-  RedirectToIndex(client);
-}
-
-void HandleChangeURL(WiFiClient *client, char *params)
-{
-  char *namePtr;
-  char *valPtr;
-  char newURL[sizeof(url)];
-  char newType[4];
-
-  newURL[0] = 0;
-  newType[0] = 0;
-  while (ParseParam(&params, &namePtr, &valPtr)) {
-    ParamText("url", newURL);
-    ParamText("type", newType);
-  }
-  if (newURL[0] && newType[0]) {
-    newUrl = true;
-    strncpy(url, newURL, sizeof(url)-1);
-    url[sizeof(url)-1] = 0;
-    if (!strcmp_P(newType, PSTR("aac"))) {
-      isAAC = true;
-    } else {
-      isAAC = false;
-    }
-    strcpy_P(status, PSTR("Changing URL..."));
-    Serial.printf_P(PSTR("Changed URL to: %s(%s)\n"), url, newType);
-    RedirectToIndex(client);
-    M5.Display.setCursor(0, 8 );
-    M5.Display.fillRect(0, 8, M5.Display.width(), 12, M5.Display.getBaseColor());
-    M5.Display.println(url);
-  } else {
-    WebError(client, 404, NULL, false);
-  }
-}
-
-void RedirectToIndex(WiFiClient *client)
-{
-  WebError(client, 301, PSTR("Location: /\r\n"), true);
-}
-
-void StopPlaying()
-{
-  if (decoder) {
-    decoder->stop();
-    delete decoder;
-    decoder = NULL;
-  }
-  if (buff) {
-    buff->close();
-    delete buff;
-    buff = NULL;
-  }
-  if (file) {
-    file->close();
-    delete file;
-    file = NULL;
-  }
-  strcpy_P(status, PSTR("Stopped"));
-  strcpy_P(title, PSTR("Stopped"));
-}
-
-void HandleStop(WiFiClient *client)
-{
-  Serial.printf_P(PSTR("HandleStop()\n"));
-  StopPlaying();
-  RedirectToIndex(client);
-}
-
-void StatusCallback(void *cbData, int code, const char *string)
-{
-  const char *ptr = reinterpret_cast<const char *>(cbData);
-  (void) code;
-  (void) ptr;
-  strncpy_P(status, string, sizeof(status)-1);
-  status[sizeof(status)-1] = 0;
-}
-
-const int preallocateBufferSize = 16*1024;
-const int preallocateCodecSize = 85332; // AAC+SBR codec max mem needed
-void *preallocateBuffer = NULL;
-void *preallocateCodec = NULL;
-
-void drawLoop(void*)
-{
-  for (;;) {
-  gfxLoop(&M5.Display);
-  M5.update();
-  if (M5.BtnA.wasClicked())
-  {
-    char newURL[sizeof(url)];
-    newURL[0] = 0;
-    M5.Speaker.tone(1000, 100);
-    currentStationNumber++;
-    if (currentStationNumber >= stations) currentStationNumber = 0;
-    M5.Display.setCursor(0, 8 );
-    M5.Display.fillRect(0, 8, M5.Display.width(), 12, M5.Display.getBaseColor());
-    M5.Display.println(stationList[currentStationNumber][0]);
-    newUrl = true;
-    strncpy(url, stationList[currentStationNumber][1], sizeof(url)-1);
-    url[sizeof(url)-1] = 0;
-    isAAC = false;
-    SaveSettings();
-  }
-  else
-  if (M5.BtnA.isHolding() || M5.BtnB.isPressed() || M5.BtnC.isPressed())
-  {
-    size_t v = M5.Speaker.getChannelVolume(m5spk_virtual_channel);
-    if (M5.BtnB.isPressed()) { --v; } else { ++v; }
-    if (v <= 255 || M5.BtnA.isHolding())
-    {
-      M5.Speaker.setChannelVolume(m5spk_virtual_channel, v);
-      volume = (int)((float)v/255.0*150.0);
-    }
-  }
-  delay(50);
-  }
-  vTaskDelete(NULL);
-}
 
 #ifdef USE_AVATAR
 using namespace m5avatar;
@@ -826,16 +661,9 @@ void lipSync(void *args)
 }
 #endif
 
-void setup()
+
+void setup(void)
 {
-  // First, preallocate all the memory needed for the buffering and codecs, never to be freed
-  preallocateBuffer = ps_malloc(preallocateBufferSize);
-  preallocateCodec = ps_malloc(preallocateCodecSize);
-  if (!preallocateBuffer || !preallocateCodec) {
-    Serial.begin(115200);
-    Serial.printf_P(PSTR("FATAL ERROR:  Unable to preallocate %d bytes for app\n"), preallocateBufferSize+preallocateCodecSize);
-    while (1) delay(1000); // Infinite halt
-  }
   auto cfg = M5.config();
 
   cfg.external_spk = true;    /// use external speaker (SPK HAT / ATOMIC SPK)
@@ -844,270 +672,156 @@ void setup()
 
   M5.begin(cfg);
 
-#ifdef USE_SD_UPDATER
-  checkSDUpdater(
-    SD,           // filesystem (default=SD)
-    MENU_BIN,     // path to binary (default=/menu.bin, empty string=rollback only)
-    3000,         // wait delay, (default=0, will be forced to 2000 upon ESP.restart() )
-    TFCARD_CS_PIN // (usually default=4 but your mileage may vary)
-  );
-#endif
+  preallocateBuffer = malloc(preallocateBufferSize);
+  preallocateCodec = malloc(preallocateCodecSize);
+  if (!preallocateBuffer || !preallocateCodec) {
+    M5.Display.printf("FATAL ERROR:  Unable to preallocate %d bytes for app\n", preallocateBufferSize + preallocateCodecSize);
+    for (;;) { delay(1000); }
+  }
 
   { /// custom setting
     auto spk_cfg = M5.Speaker.config();
     /// Increasing the sample_rate will improve the sound quality instead of increasing the CPU load.
-    spk_cfg.sample_rate = 48000; // default:48000 (48kHz)  e.g. 50000 , 80000 , 96000 , 100000 , 144000 , 192000
-//    spk_cfg.task_pinned_core = APP_CPU_NUM;
-    spk_cfg.task_pinned_core = 1;
-    spk_cfg.task_priority = configMAX_PRIORITIES -2;
-    spk_cfg.dma_buf_count = 16;
-    spk_cfg.dma_buf_len = 256;
+    spk_cfg.sample_rate = 96000; // default:64000 (64kHz)  e.g. 48000 , 50000 , 80000 , 96000 , 100000 , 128000 , 144000 , 192000 , 200000
+    spk_cfg.task_pinned_core = APP_CPU_NUM;
     M5.Speaker.config(spk_cfg);
   }
-
   M5.Speaker.begin();
 
-  FastLED.addLeds<SK6812, DATA_PIN, GRB>(leds, NUM_LEDS);  // GRB ordering is typical
-  FastLED.setBrightness(32);
-  level_led(5, 5);
-  FastLED.show();
+  gfx1 = &M5.Display;
 
-  delay(1000);
-  Serial.printf_P(PSTR("Connecting to WiFi\n"));
+#ifdef USE_AVATAR
+  gfx2 = new M5UnitLCD(M5.Ex_I2C.getSDA(), M5.Ex_I2C.getSCL());
+  if(!gfx2->init()) {
+    delete gfx2;
+    gfx2 = new M5UnitOLED(M5.Ex_I2C.getSDA(), M5.Ex_I2C.getSCL());
+    if (!gfx2->init())
+    {
+      delete gfx2;
+      gfx2 = nullptr;
+    }
+  }
 
+  if (gfx2)
+  {
+    gfx2->setRotation(3);
+    gfx2->fillScreen((uint16_t)TFT_BLACK);
+#ifdef SWAP_DISPLAY
+    std::swap(gfx1, gfx2);
+#endif
+    avatar = new Avatar(new DogFace(gfx2));
+    switch (gfx2->getBoard())
+    {
+    case m5::board_t::board_M5UnitLCD:
+      avatar->setScale(0.5);
+      avatar->setOffset(-40, -50);
+      break;
+
+    case m5::board_t::board_M5UnitOLED:
+      avatar->setScale(0.4);
+      avatar->setOffset(-95, -90);
+      break;
+
+    default:
+      break;
+    }
+    ColorPalette cp;
+    cp.set(COLOR_PRIMARY   , TFT_WHITE);
+    cp.set(COLOR_BACKGROUND, TFT_BLACK);
+    avatar->setColorPalette(cp);
+    avatar->init(); // start drawing
+    avatar->addTask(lipSync, "lipSync");
+  }
+#endif
+
+  gfx1->println("Connecting to WiFi");
   WiFi.disconnect();
   WiFi.softAPdisconnect(true);
   WiFi.mode(WIFI_STA);
-  
-  WiFi.begin(ssid, password);
+
+#if defined ( WIFI_SSID ) &&  defined ( WIFI_PASS )
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+#else
+  WiFi.begin();
+#endif
 
   // Try forever
-  M5.Lcd.setTextSize(2);
-  M5.Lcd.print("Connecting to WiFi");
-  Serial.printf_P(PSTR("Connecting to WiFi"));
   while (WiFi.status() != WL_CONNECTED) {
-    Serial.print(".");
-    M5.Lcd.print(".");
-    delay(250);
+    gfx1->print(".");
+    delay(100);
   }
-  Serial.printf_P(PSTR("\nConnected\n"));
-  M5.Lcd.println("");
-  M5.Lcd.println("Connected");
-  
-  Serial.printf_P(PSTR("Go to http://"));
-  M5.Lcd.print("Go to http://");
-  Serial.print(WiFi.localIP());
-  M5.Lcd.print(WiFi.localIP());
-  Serial.printf_P(PSTR("/ to control the web radio.\n"));
-  M5.Lcd.print("/\nto control the web radio.\n");
-  delay(3000);
-  M5.Lcd.fillScreen((uint16_t)TFT_BLACK);  
-  M5.Lcd.setTextSize(1);
-  turn_off_led();
-  
-  server.begin();
-  
-  strcpy_P(url, PSTR("none"));
-  strcpy_P(status, PSTR("OK"));
-  strcpy_P(title, PSTR("Idle"));
+  gfx1->clear();
 
-  audioLogger = &Serial;
-  file = NULL;
-  buff = NULL;
-  decoder = NULL;
+  gfxSetup(gfx1);
 
-  LoadSettings();
-  
-#ifdef USE_AVATAR
-  gfx2 = new M5UnitLCD();
-  if(!gfx2->init()) {
-    delete gfx2;
-    gfx2 = new M5UnitOLED();
-    gfx2->init();
+  play(station_index);
+
+  xTaskCreatePinnedToCore(decodeTask, "decodeTask", 4096, nullptr, 5, nullptr, PRO_CPU_NUM);
+
+#ifdef USE_FASTLED
+  if (M5.getBoard() == m5::board_t::board_M5Stack)
+  {
+    FastLED.addLeds<SK6812, GPIO_NUM_15, GRB>(leds, NUM_LEDS);  // GRB ordering is typical
   }
-  gfx2->setRotation(3);
-  gfx2->fillScreen((uint16_t)TFT_BLACK);  
-
-  gfxSetup(&M5.Display);
-  xTaskCreatePinnedToCore(drawLoop, "drawLoop", 2048, NULL, 5, NULL, 1);
-
-  avatar = new Avatar(gfx2);
-  if(gfx2->width() >= 135) {
-    avatar->setScale(0.5);    //LCD
-    avatar->setOffset(-40, -50);
-  } else {
-    avatar->setScale(0.4);    //OLED
-    avatar->setOffset(-95, -90);
+  else
+  if (M5.getBoard() == m5::board_t::board_M5StackCore2)
+  {
+    FastLED.addLeds<SK6812, GPIO_NUM_25, GRB>(leds, NUM_LEDS);  // GRB ordering is typical
   }
-  avatar->init(); // start drawing
-  avatar->addTask(lipSync, "lipSync");
-#else
-  gfxSetup(&M5.Display);
-  xTaskCreatePinnedToCore(drawLoop, "drawLoop", 2048, NULL, 5, NULL, 1);
+  FastLED.setBrightness(32);
+  level_led(5, 5);
+  FastLED.show();
 #endif
 }
 
-void StartNewURL()
+void loop(void)
 {
-  Serial.printf_P(PSTR("Changing URL to: %s, vol=%d\n"), url, volume);
+  gfxLoop(gfx1);
 
-  newUrl = false;
-  // Stop and free existing ones
-  Serial.printf_P(PSTR("Before stop...Free mem=%d\n"), ESP.getFreeHeap());
-  StopPlaying();
-  Serial.printf_P(PSTR("After stop...Free mem=%d\n"), ESP.getFreeHeap());
-  SaveSettings();
-  Serial.printf_P(PSTR("Saved settings\n"));
-  
-//  file = new AudioFileSourceICYStream(stationList[currentStationNumber][1]);
-  file = new AudioFileSourceICYStream(url);
-  Serial.printf_P(PSTR("created icystream\n"));
-  file->RegisterMetadataCB(MDCallback, NULL);
-  buff = new AudioFileSourceBuffer(file, preallocateBuffer, preallocateBufferSize);
-  Serial.printf_P(PSTR("created buffer\n"));
-  buff->RegisterStatusCB(StatusCallback, NULL);
-  decoder = isAAC ? (AudioGenerator*) new AudioGeneratorAAC(preallocateCodec, preallocateCodecSize) : (AudioGenerator*) new AudioGeneratorMP3(preallocateCodec, preallocateCodecSize);
-  Serial.printf_P(PSTR("created decoder\n"));
-  decoder->RegisterStatusCB(StatusCallback, NULL);
-  Serial.printf_P("Decoder start...\n");
-  decoder->begin(buff, &out);
-//  out.SetGain(((float)volume)/100.0);
-  M5.Speaker.setChannelVolume(m5spk_virtual_channel, (int)(((float)volume)/100.0*255.0));
-  if (!decoder->isRunning()) {
-    Serial.printf_P(PSTR("Can't connect to URL"));
-    StopPlaying();
-    strcpy_P(status, PSTR("Unable to connect to URL"));
-    retryms = millis() + 2000;
+  {
+    static int prev_frame;
+    int frame;
+    do
+    {
+      delay(1);
+    } while (prev_frame == (frame = millis() >> 3)); /// 8 msec cycle wait
+    prev_frame = frame;
   }
-  Serial.printf_P("Done start new URL\n");
-}
 
-void LoadSettings()
-{
-  // Restore from EEPROM, check the checksum matches
-  Settings s;
-  uint8_t *ptr = reinterpret_cast<uint8_t *>(&s);
-  EEPROM.begin(sizeof(s));
-  for (size_t i=0; i<sizeof(s); i++) {
-    ptr[i] = EEPROM.read(i);
+  M5.update();
+  if (M5.BtnA.wasPressed())
+  {
+    M5.Speaker.tone(440, 50);
   }
-  EEPROM.end();
-  int16_t sum = 0x1234;
-  for (size_t i=0; i<sizeof(url); i++) sum += s.url[i];
-  sum += s.isAAC;
-  sum += s.volume;
-  if (s.checksum == sum) {
-    strcpy(url, s.url);
-    isAAC = s.isAAC;
-    volume = s.volume;
-   M5.Speaker.setChannelVolume(m5spk_virtual_channel, (int)(((float)volume)/150.0*255.0));
-   Serial.printf_P(PSTR("Resuming stream from EEPROM: %s, type=%s, vol=%d\n"), url, isAAC?"AAC":"MP3", volume);
-    newUrl = true;
-  }
-}
+  if (M5.BtnA.wasDeciedClickCount())
+  {
+    switch (M5.BtnA.getClickCount())
+    {
+    case 1:
+      M5.Speaker.tone(1000, 100);
+      if (++station_index >= stations) { station_index = 0; }
+      play(station_index);
+      break;
 
-void SaveSettings()
-{
-  // Store in "EEPROM" to restart automatically
-  Settings s;
-  memset(&s, 0, sizeof(s));
-  strcpy(s.url, url);
-  s.isAAC = isAAC;
-  s.volume = volume;
-  s.checksum = 0x1234;
-  for (size_t i=0; i<sizeof(url); i++) s.checksum += s.url[i];
-  s.checksum += s.isAAC;
-  s.checksum += s.volume;
-  uint8_t *ptr = reinterpret_cast<uint8_t *>(&s);
-  EEPROM.begin(sizeof(s));
-  for (size_t i=0; i<sizeof(s); i++) {
-    EEPROM.write(i, ptr[i]);
-  }
-  EEPROM.commit();
-  EEPROM.end();
-}
-
-void PumpDecoder()
-{
-  if (decoder && decoder->isRunning()) {
-    strcpy_P(status, PSTR("Playing")); // By default we're OK unless the decoder says otherwise
-    if (!decoder->loop()) {
-      Serial.printf_P(PSTR("Stopping decoder\n"));
-      StopPlaying();
-      retryms = millis() + 2000;
+    case 2:
+      M5.Speaker.tone(800, 100);
+      if (station_index == 0) { station_index = stations; }
+      play(--station_index);
+      break;
     }
   }
-}
-
-void loop()
-{
-  static int lastms = 0;
-  if (millis()-lastms > 1000) {
-    lastms = millis();
-    Serial.printf_P(PSTR("Running for %d seconds%c...Free mem=%d\n"), lastms/1000, !decoder?' ':(decoder->isRunning()?'*':' '), ESP.getFreeHeap());
-  }
-
-  if (retryms && millis()-retryms>0) {
-    retryms = 0;
-    newUrl = true;
-  }
-  
-  if (newUrl) {
-    StartNewURL();
-  }
-
-  PumpDecoder();
-
-  char *reqUrl;
-  char *params;
-  WiFiClient client = server.available();
-  PumpDecoder();
-  char reqBuff[384];
-  if (client && WebReadRequest(&client, reqBuff, 384, &reqUrl, &params)) {
-    PumpDecoder();
-    if (IsIndexHTML(reqUrl)) {
-      HandleIndex(&client);
-    } else if (!strcmp_P(reqUrl, PSTR("stop"))) {
-      HandleStop(&client);
-    } else if (!strcmp_P(reqUrl, PSTR("status"))) {
-      HandleStatus(&client);
-    } else if (!strcmp_P(reqUrl, PSTR("title"))) {
-      HandleTitle(&client);
-    } else if (!strcmp_P(reqUrl, PSTR("setvol"))) {
-      HandleVolume(&client, params);
-    } else if (!strcmp_P(reqUrl, PSTR("changeurl"))) {
-      HandleChangeURL(&client, params);
-    } else {
-      WebError(&client, 404, NULL, false);
+  if (M5.BtnA.isHolding() || M5.BtnB.isPressed() || M5.BtnC.isPressed())
+  {
+    size_t v = M5.Speaker.getChannelVolume(m5spk_virtual_channel);
+    int add = (M5.BtnB.isPressed()) ? -1 : 1;
+    if (M5.BtnA.isHolding())
+    {
+      add = M5.BtnA.getClickCount() ? -1 : 1;
     }
-    // web clients hate when door is violently shut
-    while (client.available()) {
-      PumpDecoder();
-      client.read();
+    v += add;
+    if (v <= 255)
+    {
+      M5.Speaker.setChannelVolume(m5spk_virtual_channel, v);
     }
   }
-  PumpDecoder();
-  if (client) {
-    client.flush();
-    client.stop();
-  }
-//  gfxLoop(&M5.Display);
-//  M5.update();
-//  if (M5.BtnA.wasClicked())
-//  {
-//    M5.Speaker.tone(1000, 100);
-////    stop();
-////    if (++fileindex >= filecount) { fileindex = 0; }
-////    play(filename[fileindex]);
-//  }
-//  else
-//  if (M5.BtnA.isHolding() || M5.BtnB.isPressed() || M5.BtnC.isPressed())
-//  {
-//    size_t v = M5.Speaker.getChannelVolume(m5spk_virtual_channel);
-//    if (M5.BtnB.isPressed()) { --v; } else { ++v; }
-//    if (v <= 255 || M5.BtnA.isHolding())
-//    {
-//      M5.Speaker.setChannelVolume(m5spk_virtual_channel, v);
-//    }
-//  }
 }

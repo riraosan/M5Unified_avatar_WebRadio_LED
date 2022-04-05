@@ -18,10 +18,10 @@ class Avatar {
   float mouthOpenRatio;
   float gazeV;
   float gazeH;
-  float rotation;
-  float scale;
   int offsetX;
   int offsetY;
+  float rotation;
+  float scale;
   ColorPalette palette;
   const char *speechText;
 
