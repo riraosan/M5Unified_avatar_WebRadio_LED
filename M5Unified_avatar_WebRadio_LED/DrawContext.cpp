@@ -26,7 +26,7 @@ DrawContext::DrawContext(Expression expression, float breath,
       rotation{rotation},
       scale{scale},
       offsetX(offsetX),
-      offsetY(offsetY){}
+      offsetY(offsetY) {}
 
 Expression DrawContext::getExpression() const { return expression; }
 

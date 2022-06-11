@@ -8,38 +8,38 @@
 #include <M5Unified.h>
 #include "DrawContext.h"
 #include "Drawable.h"
-//extern LGFX lcd;               // TFT_eSPIがLGFXの別名として定義されます。
+// extern LGFX lcd;               // TFT_eSPIがLGFXの別名として定義されます。
 
-const int16_t TEXT_HEIGHT = 8;
-const int16_t TEXT_SIZE = 2;
-const int16_t MIN_WIDTH = 40;
-const uint16_t primaryColor = TFT_BLACK;
+const int16_t  TEXT_HEIGHT     = 8;
+const int16_t  TEXT_SIZE       = 2;
+const int16_t  MIN_WIDTH       = 40;
+const uint16_t primaryColor    = TFT_BLACK;
 const uint16_t backgroundColor = TFT_WHITE;
-const int cx = 240;
-const int cy = 220;
+const int      cx              = 240;
+const int      cy              = 220;
 
 namespace m5avatar {
 class Balloon final : public Drawable {
- public:
+public:
   // constructor
-  Balloon() = default;
-  ~Balloon() = default;
-  Balloon(const Balloon &other) = default;
+  Balloon()                                = default;
+  ~Balloon()                               = default;
+  Balloon(const Balloon &other)            = default;
   Balloon &operator=(const Balloon &other) = default;
-  void draw(M5Canvas *spi, BoundingRect rect,
-            DrawContext *drawContext) override {
- #if 1
+  void     draw(M5Canvas *spi, BoundingRect rect,
+                DrawContext *drawContext) override {
+#if 1
     const char *text = drawContext->getspeechText();
     if (strlen(text) == 0) {
       return;
     }
-//    lcd.setTextSize(TEXT_SIZE);
-//    lcd.setTextDatum(MC_DATUM);
+    //    lcd.setTextSize(TEXT_SIZE);
+    //    lcd.setTextDatum(MC_DATUM);
     spi->setTextSize(TEXT_SIZE);
     spi->setTextColor((uint16_t)primaryColor, backgroundColor);
     spi->setTextDatum(MC_DATUM);
-//    int textWidth = lcd.textWidth((const char*)text, 2);
-    int textWidth = M5.Lcd.textWidth(text);
+    //    int textWidth = lcd.textWidth((const char*)text, 2);
+    int textWidth  = M5.Lcd.textWidth(text);
     int textHeight = TEXT_HEIGHT * TEXT_SIZE;
     spi->fillEllipse(cx, cy, _max(textWidth, MIN_WIDTH) + 2 + 12, textHeight * 2 + 2,
                      (uint16_t)primaryColor);

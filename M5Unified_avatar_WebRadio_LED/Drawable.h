@@ -11,8 +11,8 @@
 
 namespace m5avatar {
 class Drawable {
- public:
-  virtual ~Drawable() = default;
+public:
+  virtual ~Drawable()                         = default;
   virtual void draw(M5Canvas *spi, BoundingRect rect,
                     DrawContext *drawContext) = 0;
 };

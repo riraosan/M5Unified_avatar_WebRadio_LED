@@ -9,66 +9,67 @@
 
 namespace m5avatar {
 class Avatar {
- private:
-  Face *face;
-  bool _isDrawing;
-  Expression expression;
-  float breath;
-  float eyeOpenRatio;
-  float mouthOpenRatio;
-  float gazeV;
-  float gazeH;
-  int offsetX;
-  int offsetY;
-  float rotation;
-  float scale;
+private:
+  Face        *face;
+  bool         _isDrawing;
+  Expression   expression;
+  float        breath;
+  float        eyeOpenRatio;
+  float        mouthOpenRatio;
+  float        gazeV;
+  float        gazeH;
+  int          offsetX;
+  int          offsetY;
+  float        rotation;
+  float        scale;
   ColorPalette palette;
-  const char *speechText;
+  const char  *speechText;
 
- public:
+public:
   Avatar();
   explicit Avatar(Face *face);
-  Avatar(LGFX_Device* device);
-//  explicit Avatar(Face *face, LGFX_Device* device);
-  ~Avatar() = default;
-  Avatar(const Avatar &other) = default;
-  Avatar &operator=(const Avatar &other) = default;
-  Face *getFace() const;
+  // Avatar(LGFX_Device* device);
+  Avatar(M5Canvas *sprite);//by @riraosan
+  //  explicit Avatar(Face *face, LGFX_Device* device);
+  ~Avatar()                                   = default;
+  Avatar(const Avatar &other)                 = default;
+  Avatar      &operator=(const Avatar &other) = default;
+  Face        *getFace() const;
   ColorPalette getColorPalette() const;
-  void setColorPalette(ColorPalette cp);
-  void setFace(Face *face);
-  void init(void);
-  void setBreath(float f);
-  float getBreath();
-  void setGaze(float vertical, float horizontal);
-  void getGaze(float *vertical, float *horizontal);
-  void setExpression(Expression exp);
-  void setEyeOpenRatio(float ratio);
-  void setMouthOpenRatio(float ratio);
-  void setSpeechText(const char *speechText);
-  void setRotation(float radian);
-  void setPosition(int top, int left);
-  void setScale(float scale);
-  void setOffset(int offsetX, int offsetY);
-  void draw(void);
-  bool isDrawing();
-  void start();
-  void stop();
-  void addTask(TaskFunction_t f, const char* name);
+  void         setColorPalette(ColorPalette cp);
+  void         setFace(Face *face);
+  void         init(void);
+  void         setBreath(float f);
+  float        getBreath();
+  void         setGaze(float vertical, float horizontal);
+  void         getGaze(float *vertical, float *horizontal);
+  void         setExpression(Expression exp);
+  void         setEyeOpenRatio(float ratio);
+  void         setMouthOpenRatio(float ratio);
+  void         setSpeechText(const char *speechText);
+  void         setRotation(float radian);
+  void         setPosition(int top, int left);
+  void         setScale(float scale);
+  void         setOffset(int offsetX, int offsetY);
+  void         draw(void);
+  bool         isDrawing();
+  void         start();
+  void         stop();
+  void         addTask(TaskFunction_t f, const char *name);
 };
 
 class DriveContext {
- private:
+private:
   // TODO(meganetaaan): cyclic reference
   Avatar *avatar;
 
- public:
+public:
   DriveContext() = delete;
   explicit DriveContext(Avatar *avatar);
-  ~DriveContext() = default;
-  DriveContext(const DriveContext &other) = delete;
+  ~DriveContext()                                    = default;
+  DriveContext(const DriveContext &other)            = delete;
   DriveContext &operator=(const DriveContext &other) = delete;
-  Avatar *getAvatar();
+  Avatar       *getAvatar();
 };
 
 }  // namespace m5avatar

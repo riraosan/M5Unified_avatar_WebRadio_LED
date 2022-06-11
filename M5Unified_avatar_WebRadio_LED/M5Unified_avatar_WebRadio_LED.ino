@@ -1,16 +1,11 @@
 
-
 // LEDレベルメータを使用する;
-#define USE_FASTLED
+//#define USE_FASTLED
 
-// アバターをサブディスプレイに表示する;
 #define USE_AVATAR
 
-// ２画面モードで表示内容を入れ替える;
-#define SWAP_DISPLAY
-
-// #define WIFI_SSID "SET YOUR WIFI SSID"
-// #define WIFI_PASS "SET YOUR WIFI PASS"
+//#define WIFI_SSID "YOUR_SSID"
+//#define WIFI_PASS "YOUR_PASSWORD"
 
 #include <HTTPClient.h>
 #include <math.h>
@@ -23,9 +18,16 @@
 #include <AudioGeneratorMP3.h>
 #include <AudioOutputI2S.h>
 
-#include <M5UnitLCD.h>
-#include <M5UnitOLED.h>
 #include <M5Unified.h>
+#include <ESP32_8BIT_CVBS.h>
+static ESP32_8BIT_CVBS display;
+static M5Canvas        canvas;
+static M5Canvas        sp_avatar(&display);
+
+static uint32_t lcd_width;
+static uint32_t lcd_height;
+static int32_t  offset_x;
+static int32_t  offset_y;
 
 #ifdef USE_AVATAR
 #include "Avatar.h"
@@ -35,43 +37,43 @@
 #ifdef USE_FASTLED
 #include <FastLED.h>
 
-  // How many leds in your strip?
-  #define NUM_LEDS 10
-  #if defined(ARDUINO_M5STACK_Core2)
-  #define DATA_PIN 25
-  #else
-  #define DATA_PIN 15
-  #endif
+// How many leds in your strip?
+#define NUM_LEDS 10
+#if defined(ARDUINO_M5STACK_Core2)
+#define DATA_PIN 25
+#else
+#define DATA_PIN 15
+#endif
 
 // Define the array of leds
 CRGB leds[NUM_LEDS];
-CRGB led_table[NUM_LEDS/2] = {CRGB::Blue,CRGB::Green,CRGB::Yellow,CRGB::Orange,CRGB::Red};
+CRGB led_table[NUM_LEDS / 2] = {CRGB::Blue, CRGB::Green, CRGB::Yellow, CRGB::Orange, CRGB::Red};
 
 void turn_off_led() {
   // Now turn the LED off, then pause
-  for(int i=0;i<NUM_LEDS;i++) leds[i] = CRGB::Black;
+  for (int i = 0; i < NUM_LEDS; i++) leds[i] = CRGB::Black;
   FastLED.show();
 }
 
 void fill_led_buff(CRGB color) {
   // Now turn the LED off, then pause
-  for(int i=0;i<NUM_LEDS;i++) leds[i] =  color;
+  for (int i = 0; i < NUM_LEDS; i++) leds[i] = color;
 }
 
 void clear_led_buff() {
   // Now turn the LED off, then pause
-  for(int i=0;i<NUM_LEDS;i++) leds[i] =  CRGB::Black;
+  for (int i = 0; i < NUM_LEDS; i++) leds[i] = CRGB::Black;
 }
 
 void level_led(int level1, int level2) {
-  if(level1>NUM_LEDS/2) level1 = NUM_LEDS/2;
-  if(level2>NUM_LEDS/2) level2 = NUM_LEDS/2;
+  if (level1 > NUM_LEDS / 2) level1 = NUM_LEDS / 2;
+  if (level2 > NUM_LEDS / 2) level2 = NUM_LEDS / 2;
   clear_led_buff();
-  for(int i=0;i<level1;i++){
-    leds[NUM_LEDS/2-1-i] = led_table[i];
+  for (int i = 0; i < level1; i++) {
+    leds[NUM_LEDS / 2 - 1 - i] = led_table[i];
   }
-  for(int i=0;i<level2;i++){
-    leds[i+NUM_LEDS/2] = led_table[i];
+  for (int i = 0; i < level2; i++) {
+    leds[i + NUM_LEDS / 2] = led_table[i];
   }
   FastLED.show();
 }
@@ -82,7 +84,6 @@ void clear_led_buff() {}
 void level_led(int level1, int level2) {}
 #endif
 
-
 LGFX_Device* gfx1 = nullptr;
 LGFX_Device* gfx2 = nullptr;
 
@@ -91,130 +92,114 @@ static constexpr uint8_t m5spk_virtual_channel = 0;
 
 /// set web radio station url
 static constexpr const char* station_list[][2] =
-{
-  {"MAXXED Out"        , "http://149.56.195.94:8015/steam"},
-  {"Asia Dream"        , "http://igor.torontocast.com:1025/;.-mp3"},
-  {"thejazzstream"     , "http://wbgo.streamguys.net/thejazzstream"},
-  {"181-beatles_128k"  , "http://listen.181fm.com/181-beatles_128k.mp3"},
-  {"illstreet-128-mp3" , "http://ice1.somafm.com/illstreet-128-mp3"},
-  {"bootliquor-128-mp3", "http://ice1.somafm.com/bootliquor-128-mp3"},
-  {"dronezone-128-mp3" , "http://ice1.somafm.com/dronezone-128-mp3"},
-  {"Lite Favorites"    , "http://naxos.cdnstream.com:80/1255_128"},
-  {"Classic FM"        , "http://media-ice.musicradio.com:80/ClassicFMMP3"},
+    {
+        {"MAXXED Out", "http://149.56.195.94:8015/steam"},
+        {"Asia Dream", "http://igor.torontocast.com:1025/;.-mp3"},
+        {"thejazzstream", "http://wbgo.streamguys.net/thejazzstream"},
+        {"181-beatles_128k", "http://listen.181fm.com/181-beatles_128k.mp3"},
+        {"illstreet-128-mp3", "http://ice1.somafm.com/illstreet-128-mp3"},
+        {"bootliquor-128-mp3", "http://ice1.somafm.com/bootliquor-128-mp3"},
+        {"dronezone-128-mp3", "http://ice1.somafm.com/dronezone-128-mp3"},
+        {"Lite Favorites", "http://naxos.cdnstream.com:80/1255_128"},
+        {"Classic FM", "http://media-ice.musicradio.com:80/ClassicFMMP3"},
 };
 static constexpr const size_t stations = sizeof(station_list) / sizeof(station_list[0]);
 
-class AudioOutputM5Speaker : public AudioOutput
-{
-  public:
-    AudioOutputM5Speaker(m5::Speaker_Class* m5sound, uint8_t virtual_sound_channel = 0)
-    {
-      _m5sound = m5sound;
-      _virtual_ch = virtual_sound_channel;
-    }
-    virtual ~AudioOutputM5Speaker(void) {};
-    virtual bool begin(void) override { return true; }
-    virtual bool ConsumeSample(int16_t sample[2]) override
-    {
-      if (_tri_buffer_index < tri_buf_size)
-      {
-        _tri_buffer[_tri_index][_tri_buffer_index  ] = sample[0];
-        _tri_buffer[_tri_index][_tri_buffer_index+1] = sample[1];
-        _tri_buffer_index += 2;
+class AudioOutputM5Speaker : public AudioOutput {
+public:
+  AudioOutputM5Speaker(m5::Speaker_Class* m5sound, uint8_t virtual_sound_channel = 0) {
+    _m5sound    = m5sound;
+    _virtual_ch = virtual_sound_channel;
+  }
+  virtual ~AudioOutputM5Speaker(void){};
+  virtual bool begin(void) override { return true; }
+  virtual bool ConsumeSample(int16_t sample[2]) override {
+    if (_tri_buffer_index < tri_buf_size) {
+      _tri_buffer[_tri_index][_tri_buffer_index]     = sample[0];
+      _tri_buffer[_tri_index][_tri_buffer_index + 1] = sample[1];
+      _tri_buffer_index += 2;
 
-        return true;
-      }
-
-      flush();
-      return false;
-    }
-    virtual void flush(void) override
-    {
-      if (_tri_buffer_index)
-      {
-        _m5sound->playRaw(_tri_buffer[_tri_index], _tri_buffer_index, hertz, true, 1, _virtual_ch);
-        _tri_index = _tri_index < 2 ? _tri_index + 1 : 0;
-        _tri_buffer_index = 0;
-        ++_update_count;
-      }
-    }
-    virtual bool stop(void) override
-    {
-      flush();
-      _m5sound->stop(_virtual_ch);
-      for (size_t i = 0; i < 3; ++i)
-      {
-        memset(_tri_buffer[i], 0, tri_buf_size * sizeof(int16_t));
-      }
-      ++_update_count;
       return true;
     }
 
-    const int16_t* getBuffer(void) const { return _tri_buffer[(_tri_index + 2) % 3]; }
-    const uint32_t getUpdateCount(void) const { return _update_count; }
+    flush();
+    return false;
+  }
+  virtual void flush(void) override {
+    if (_tri_buffer_index) {
+      _m5sound->playRaw(_tri_buffer[_tri_index], _tri_buffer_index, hertz, true, 1, _virtual_ch);
+      _tri_index        = _tri_index < 2 ? _tri_index + 1 : 0;
+      _tri_buffer_index = 0;
+      ++_update_count;
+    }
+  }
+  virtual bool stop(void) override {
+    flush();
+    _m5sound->stop(_virtual_ch);
+    for (size_t i = 0; i < 3; ++i) {
+      memset(_tri_buffer[i], 0, tri_buf_size * sizeof(int16_t));
+    }
+    ++_update_count;
+    return true;
+  }
 
-  protected:
-    m5::Speaker_Class* _m5sound;
-    uint8_t _virtual_ch;
-    static constexpr size_t tri_buf_size = 640;
-    int16_t _tri_buffer[3][tri_buf_size];
-    size_t _tri_buffer_index = 0;
-    size_t _tri_index = 0;
-    size_t _update_count = 0;
+  const int16_t* getBuffer(void) const { return _tri_buffer[(_tri_index + 2) % 3]; }
+  const uint32_t getUpdateCount(void) const { return _update_count; }
+
+protected:
+  m5::Speaker_Class*      _m5sound;
+  uint8_t                 _virtual_ch;
+  static constexpr size_t tri_buf_size = 640;
+  int16_t                 _tri_buffer[3][tri_buf_size];
+  size_t                  _tri_buffer_index = 0;
+  size_t                  _tri_index        = 0;
+  size_t                  _update_count     = 0;
 };
 
-
 #define FFT_SIZE 256
-class fft_t
-{
-  float _wr[FFT_SIZE + 1];
-  float _wi[FFT_SIZE + 1];
-  float _fr[FFT_SIZE + 1];
-  float _fi[FFT_SIZE + 1];
+class fft_t {
+  float    _wr[FFT_SIZE + 1];
+  float    _wi[FFT_SIZE + 1];
+  float    _fr[FFT_SIZE + 1];
+  float    _fi[FFT_SIZE + 1];
   uint16_t _br[FFT_SIZE + 1];
-  size_t _ie;
+  size_t   _ie;
 
 public:
-  fft_t(void)
-  {
+  fft_t(void) {
 #ifndef M_PI
 #define M_PI 3.141592653
 #endif
-    _ie = logf( (float)FFT_SIZE ) / log(2.0) + 0.5;
+    _ie                          = logf((float)FFT_SIZE) / log(2.0) + 0.5;
     static constexpr float omega = 2.0f * M_PI / FFT_SIZE;
-    static constexpr int s4 = FFT_SIZE / 4;
-    static constexpr int s2 = FFT_SIZE / 2;
-    for ( int i = 1 ; i < s4 ; ++i)
-    {
-    float f = cosf(omega * i);
+    static constexpr int   s4    = FFT_SIZE / 4;
+    static constexpr int   s2    = FFT_SIZE / 2;
+    for (int i = 1; i < s4; ++i) {
+      float f     = cosf(omega * i);
       _wi[s4 + i] = f;
       _wi[s4 - i] = f;
-      _wr[     i] = f;
+      _wr[i]      = f;
       _wr[s2 - i] = -f;
     }
     _wi[s4] = _wr[0] = 1;
 
     size_t je = 1;
-    _br[0] = 0;
-    _br[1] = FFT_SIZE / 2;
-    for ( size_t i = 0 ; i < _ie - 1 ; ++i )
-    {
-      _br[ je << 1 ] = _br[ je ] >> 1;
-      je = je << 1;
-      for ( size_t j = 1 ; j < je ; ++j )
-      {
+    _br[0]    = 0;
+    _br[1]    = FFT_SIZE / 2;
+    for (size_t i = 0; i < _ie - 1; ++i) {
+      _br[je << 1] = _br[je] >> 1;
+      je           = je << 1;
+      for (size_t j = 1; j < je; ++j) {
         _br[je + j] = _br[je] + _br[j];
       }
     }
   }
 
-  void exec(const int16_t* in)
-  {
+  void exec(const int16_t* in) {
     memset(_fi, 0, sizeof(_fi));
-    for ( size_t j = 0 ; j < FFT_SIZE / 2 ; ++j )
-    {
-      float basej = 0.25 * (1.0-_wr[j]);
-      size_t r = FFT_SIZE - j - 1;
+    for (size_t j = 0; j < FFT_SIZE / 2; ++j) {
+      float  basej = 0.25 * (1.0 - _wr[j]);
+      size_t r     = FFT_SIZE - j - 1;
 
       /// perform han window and stereo to mono convert.
       _fr[_br[j]] = basej * (in[j * 2] + in[j * 2 + 1]);
@@ -223,74 +208,67 @@ public:
 
     size_t s = 1;
     size_t i = 0;
-    do
-    {
+    do {
       size_t ke = s;
       s <<= 1;
       size_t je = FFT_SIZE / s;
-      size_t j = 0;
-      do
-      {
+      size_t j  = 0;
+      do {
         size_t k = 0;
-        do
-        {
-          size_t l = s * j + k;
-          size_t m = ke * (2 * j + 1) + k;
-          size_t p = je * k;
-          float Wxmr = _fr[m] * _wr[p] + _fi[m] * _wi[p];
-          float Wxmi = _fi[m] * _wr[p] - _fr[m] * _wi[p];
-          _fr[m] = _fr[l] - Wxmr;
-          _fi[m] = _fi[l] - Wxmi;
+        do {
+          size_t l    = s * j + k;
+          size_t m    = ke * (2 * j + 1) + k;
+          size_t p    = je * k;
+          float  Wxmr = _fr[m] * _wr[p] + _fi[m] * _wi[p];
+          float  Wxmi = _fi[m] * _wr[p] - _fr[m] * _wi[p];
+          _fr[m]      = _fr[l] - Wxmr;
+          _fi[m]      = _fi[l] - Wxmi;
           _fr[l] += Wxmr;
           _fi[l] += Wxmi;
-        } while ( ++k < ke) ;
-      } while ( ++j < je );
-    } while ( ++i < _ie );
+        } while (++k < ke);
+      } while (++j < je);
+    } while (++i < _ie);
   }
 
-  uint32_t get(size_t index)
-  {
-    return (index < FFT_SIZE / 2) ? (uint32_t)sqrtf(_fr[ index ] * _fr[ index ] + _fi[ index ] * _fi[ index ]) : 0u;
+  uint32_t get(size_t index) {
+    return (index < FFT_SIZE / 2) ? (uint32_t)sqrtf(_fr[index] * _fr[index] + _fi[index] * _fi[index]) : 0u;
   }
 };
 
-static constexpr const int preallocateBufferSize = 5 * 1024;
-static constexpr const int preallocateCodecSize = 29192; // MP3 codec max mem needed
-static void* preallocateBuffer = nullptr;
-static void* preallocateCodec = nullptr;
-static constexpr size_t WAVE_SIZE = 320;
-static AudioOutputM5Speaker out(&M5.Speaker, m5spk_virtual_channel);
-static AudioGenerator *decoder = nullptr;
-static AudioFileSourceICYStream *file = nullptr;
-static AudioFileSourceBuffer *buff = nullptr;
-static fft_t fft;
-static bool fft_enabled = false;
-static bool wave_enabled = false;
-static uint16_t prev_y[(FFT_SIZE / 2)+1];
-static uint16_t peak_y[(FFT_SIZE / 2)+1];
-static int16_t wave_y[WAVE_SIZE];
-static int16_t wave_h[WAVE_SIZE];
-static int16_t raw_data[WAVE_SIZE * 2];
-static int header_height = 0;
-static size_t station_index = 0;
-static char stream_title[128] = { 0 };
-static const char* meta_text[2] = { nullptr, stream_title };
-static const size_t meta_text_num = sizeof(meta_text) / sizeof(meta_text[0]);
-static uint8_t meta_mod_bits = 0;
-static volatile size_t playindex = ~0u;
+static constexpr const int       preallocateBufferSize = 5 * 1024;
+static constexpr const int       preallocateCodecSize  = 29192;  // MP3 codec max mem needed
+static void*                     preallocateBuffer     = nullptr;
+static void*                     preallocateCodec      = nullptr;
+static constexpr size_t          WAVE_SIZE             = 320;
+static AudioOutputM5Speaker      out(&M5.Speaker, m5spk_virtual_channel);
+static AudioGenerator*           decoder = nullptr;
+static AudioFileSourceICYStream* file    = nullptr;
+static AudioFileSourceBuffer*    buff    = nullptr;
+static fft_t                     fft;
+static bool                      fft_enabled  = false;
+static bool                      wave_enabled = false;
+static uint16_t                  prev_y[(FFT_SIZE / 2) + 1];
+static uint16_t                  peak_y[(FFT_SIZE / 2) + 1];
+static int16_t                   wave_y[WAVE_SIZE];
+static int16_t                   wave_h[WAVE_SIZE];
+static int16_t                   raw_data[WAVE_SIZE * 2];
+static int                       header_height     = 0;
+static size_t                    station_index     = 0;
+static char                      stream_title[128] = {0};
+static const char*               meta_text[2]      = {nullptr, stream_title};
+static const size_t              meta_text_num     = sizeof(meta_text) / sizeof(meta_text[0]);
+static uint8_t                   meta_mod_bits     = 0;
+static volatile size_t           playindex         = ~0u;
 
-static void MDCallback(void *cbData, const char *type, bool isUnicode, const char *string)
-{
+static void MDCallback(void* cbData, const char* type, bool isUnicode, const char* string) {
   (void)cbData;
-  if ((strcmp(type, "StreamTitle") == 0) && (strcmp(stream_title, string) != 0))
-  {
+  if ((strcmp(type, "StreamTitle") == 0) && (strcmp(stream_title, string) != 0)) {
     strncpy(stream_title, string, sizeof(stream_title));
     meta_mod_bits |= 2;
   }
 }
 
-static void stop(void)
-{
+static void stop(void) {
   if (decoder) {
     decoder->stop();
     delete decoder;
@@ -310,462 +288,432 @@ static void stop(void)
   out.stop();
 }
 
-static void play(size_t index)
-{
+static void play(size_t index) {
   playindex = index;
 }
 
-static void decodeTask(void*)
-{
-  for (;;)
-  {
+static void decodeTask(void*) {
+  for (;;) {
     delay(1);
-    if (playindex != ~0u)
-    {
+    if (playindex != ~0u) {
       auto index = playindex;
-      playindex = ~0u;
+      playindex  = ~0u;
       stop();
-      meta_text[0] = station_list[index][0];
+      meta_text[0]    = station_list[index][0];
       stream_title[0] = 0;
-      meta_mod_bits = 3;
-      file = new AudioFileSourceICYStream(station_list[index][1]);
+      meta_mod_bits   = 3;
+      file            = new AudioFileSourceICYStream(station_list[index][1]);
       file->RegisterMetadataCB(MDCallback, (void*)"ICY");
-      buff = new AudioFileSourceBuffer(file, preallocateBuffer, preallocateBufferSize);
+      buff    = new AudioFileSourceBuffer(file, preallocateBuffer, preallocateBufferSize);
       decoder = new AudioGeneratorMP3(preallocateCodec, preallocateCodecSize);
       decoder->begin(buff, &out);
     }
-    if (decoder && decoder->isRunning())
-    {
-      if (!decoder->loop()) { decoder->stop(); }
+    if (decoder && decoder->isRunning()) {
+      if (!decoder->loop()) {
+        decoder->stop();
+      }
     }
   }
 }
 
-static uint32_t bgcolor(LGFX_Device* gfx, int y)
-{
-  auto h = gfx->height();
+static uint32_t bgcolor(M5Canvas* gfx, int y) {
+  auto h  = gfx->height();
   auto dh = h - header_height;
-  int v = ((h - y)<<5) / dh;
-  if (dh > 44)
-  {
-    int v2 = ((h - y - 1)<<5) / dh;
-    if ((v >> 2) != (v2 >> 2))
-    {
+  int  v  = ((h - y) << 5) / dh;
+  if (dh > 44) {
+    int v2 = ((h - y - 1) << 5) / dh;
+    if ((v >> 2) != (v2 >> 2)) {
       return 0x666666u;
     }
   }
   return gfx->color888(v + 2, v, v + 6);
 }
 
-static void gfxSetup(LGFX_Device* gfx)
-{
-  if (gfx == nullptr) { return; }
-  if (gfx->width() < gfx->height())
-  {
-    gfx->setRotation(gfx->getRotation()^1);
+static void gfxSetup(M5Canvas* gfx) {
+  if (gfx == nullptr) {
+    return;
   }
-  gfx->setFont(&fonts::lgfxJapanGothic_12);
-  gfx->setEpdMode(epd_mode_t::epd_fastest);
+  if (gfx->width() < gfx->height()) {
+    gfx->setRotation(gfx->getRotation() ^ 1);
+  }
+  gfx->setFont(&fonts::lgfxJapanGothic_8);
   gfx->setTextWrap(false);
   gfx->setCursor(0, 8);
-  gfx->println("WebRadio player");
+  gfx->print(" WebRadio player");
   gfx->fillRect(0, 6, gfx->width(), 2, TFT_BLACK);
 
   header_height = (gfx->height() > 80) ? 33 : 21;
-  fft_enabled = !gfx->isEPD();
-  if (fft_enabled)
-  {
-    wave_enabled = (gfx->getBoard() != m5gfx::board_M5UnitLCD);
 
-    for (int y = header_height; y < gfx->height(); ++y)
-    {
-      gfx->drawFastHLine(0, y, gfx->width(), bgcolor(gfx, y));
-    }
+  fft_enabled  = true;
+  wave_enabled = false;
+
+  for (int y = header_height; y < gfx->height(); ++y) {
+    gfx->drawFastHLine(0, y, gfx->width(), bgcolor(gfx, y));
   }
 
-  for (int x = 0; x < (FFT_SIZE/2)+1; ++x)
-  {
+  for (int x = 0; x < (FFT_SIZE / 2) + 1; ++x) {
     prev_y[x] = INT16_MAX;
     peak_y[x] = INT16_MAX;
   }
-  for (int x = 0; x < WAVE_SIZE; ++x)
-  {
+
+  for (int x = 0; x < WAVE_SIZE; ++x) {
     wave_y[x] = gfx->height();
     wave_h[x] = 0;
   }
 }
 
-void gfxLoop(LGFX_Device* gfx)
-{
-  if (gfx == nullptr) { return; }
-  if (header_height > 32)
-  {
-    if (meta_mod_bits)
-    {
-      gfx->startWrite();
-      for (int id = 0; id < meta_text_num; ++id)
-      {
-        if (0 == (meta_mod_bits & (1<<id))) { continue; }
-        meta_mod_bits &= ~(1<<id);
+void gfxLoop(M5Canvas* gfx) {
+  if (gfx == nullptr) {
+    return;
+  }
+
+  if (header_height > 32) {
+    if (meta_mod_bits) {
+      for (int id = 0; id < meta_text_num; ++id) {
+        if (0 == (meta_mod_bits & (1 << id))) {
+          continue;
+        }
+        meta_mod_bits &= ~(1 << id);
         size_t y = id * 12;
-        if (y+12 >= header_height) { continue; }
+        if (y + 12 >= header_height) {
+          continue;
+        }
         gfx->setCursor(4, 8 + y);
         gfx->fillRect(0, 8 + y, gfx->width(), 12, gfx->getBaseColor());
         gfx->print(meta_text[id]);
-        gfx->print(" "); // Garbage data removal when UTF8 characters are broken in the middle.
+        gfx->print(" ");  // Garbage data removal when UTF8 characters are broken in the middle.
       }
-      gfx->display();
-      gfx->endWrite();
+      canvas.pushSprite(&display, offset_x, offset_y);
     }
-  }
-  else
-  {
+  } else {
     static int title_x;
     static int title_id;
     static int wait = INT16_MAX;
 
-    if (meta_mod_bits)
-    {
-      if (meta_mod_bits & 1)
-      {
-        title_x = 4;
+    if (meta_mod_bits) {
+      if (meta_mod_bits & 1) {
+        title_x  = 4;
         title_id = 0;
         gfx->fillRect(0, 8, gfx->width(), 12, gfx->getBaseColor());
       }
       meta_mod_bits = 0;
-      wait = 0;
+      wait          = 0;
     }
 
-    if (--wait < 0)
-    {
-      int tx = title_x;
+    if (--wait < 0) {
+      int tx  = title_x;
       int tid = title_id;
-      wait = 3;
-      gfx->startWrite();
+      wait    = 3;
+
       uint_fast8_t no_data_bits = 0;
-      do
-      {
-        if (tx == 4) { wait = 255; }
+      do {
+        if (tx == 4) {
+          wait = 255;
+        }
         gfx->setCursor(tx, 8);
         const char* meta = meta_text[tid];
-        if (meta[0] != 0)
-        {
+        if (meta[0] != 0) {
           gfx->print(meta);
           gfx->print("  /  ");
           tx = gfx->getCursorX();
-          if (++tid == meta_text_num) { tid = 0; }
-          if (tx <= 4)
-          {
-            title_x = tx;
+          if (++tid == meta_text_num) {
+            tid = 0;
+          }
+          if (tx <= 4) {
+            title_x  = tx;
             title_id = tid;
           }
-        }
-        else
-        {
-          if ((no_data_bits |= 1 << tid) == ((1 << meta_text_num) - 1))
-          {
+        } else {
+          if ((no_data_bits |= 1 << tid) == ((1 << meta_text_num) - 1)) {
             break;
           }
-          if (++tid == meta_text_num) { tid = 0; }
+          if (++tid == meta_text_num) {
+            tid = 0;
+          }
         }
       } while (tx < gfx->width());
       --title_x;
-      gfx->display();
-      gfx->endWrite();
+      canvas.pushSprite(&display, offset_x, offset_y);
     }
   }
 
-  if (fft_enabled)
-  {
+  if (fft_enabled) {
     static int prev_x[2];
     static int peak_x[2];
 
     auto buf = out.getBuffer();
-    if (buf)
-    {
-      memcpy(raw_data, buf, WAVE_SIZE * 2 * sizeof(int16_t)); // stereo data copy
-      gfx->startWrite();
+    if (buf) {
+      memcpy(raw_data, buf, WAVE_SIZE * 2 * sizeof(int16_t));  // stereo data copy
 
       int32_t levels[2];
       // draw stereo level meter
-      for (size_t i = 0; i < 2; ++i)
-      {
+      for (size_t i = 0; i < 2; ++i) {
         int32_t level = 0;
-        for (size_t j = i; j < 640; j += 32)
-        {
+        for (size_t j = i; j < 640; j += 32) {
           uint32_t lv = abs(raw_data[j]);
-          if (level < lv) { level = lv; }
+          if (level < lv) {
+            level = lv;
+          }
         }
         levels[i] = level;
 
-        int32_t x = (level * gfx->width()) / INT16_MAX;
+        int32_t x  = (level * gfx->width()) / INT16_MAX;
         int32_t px = prev_x[i];
-        if (px != x)
-        {
+        if (px != x) {
           gfx->fillRect(x, i * 3, px - x, 2, px < x ? 0xFF9900u : 0x330000u);
           prev_x[i] = x;
         }
         px = peak_x[i];
-        if (px > x)
-        {
+        if (px > x) {
           gfx->writeFastVLine(px, i * 3, 2, TFT_BLACK);
           px--;
-        }
-        else
-        {
+        } else {
           px = x;
         }
-        if (peak_x[i] != px)
-        {
+        if (peak_x[i] != px) {
           peak_x[i] = px;
           gfx->writeFastVLine(px, i * 3, 2, TFT_WHITE);
         }
       }
-      gfx->display();
-      level_led(levels[0]*8/INT16_MAX,levels[1]*8/INT16_MAX);
+
+      canvas.pushSprite(&display, offset_x, offset_y);
+
+      level_led(levels[0] * 8 / INT16_MAX, levels[1] * 8 / INT16_MAX);
 
       // draw FFT level meter
       fft.exec(raw_data);
       size_t bw = gfx->width() / 60;
-      if (bw < 3) { bw = 3; }
+      if (bw < 3) {
+        bw = 3;
+      }
       int32_t dsp_height = gfx->height();
       int32_t fft_height = dsp_height - header_height - 1;
-      size_t xe = gfx->width() / bw;
-      if (xe > (FFT_SIZE/2)) { xe = (FFT_SIZE/2); }
+      size_t  xe         = gfx->width() / bw;
+      if (xe > (FFT_SIZE / 2)) {
+        xe = (FFT_SIZE / 2);
+      }
       int32_t wave_next = ((header_height + dsp_height) >> 1) + (((256 - (raw_data[0] + raw_data[1])) * fft_height) >> 17);
 
-      uint32_t bar_color[2] = { 0x000033u, 0x99AAFFu };
+      uint32_t bar_color[2] = {0x000033u, 0x99AAFFu};
 
-      for (size_t bx = 0; bx <= xe; ++bx)
-      {
+      for (size_t bx = 0; bx <= xe; ++bx) {
         size_t x = bx * bw;
-        if ((x & 7) == 0) { gfx->display(); taskYIELD(); }
+        if ((x & 7) == 0) {
+          canvas.pushSprite(&display, offset_x, offset_y);
+          taskYIELD();
+        }
         int32_t f = fft.get(bx);
         int32_t y = (f * fft_height) >> 18;
-        if (y > fft_height) { y = fft_height; }
-        y = dsp_height - y;
+        if (y > fft_height) {
+          y = fft_height;
+        }
+        y          = dsp_height - y;
         int32_t py = prev_y[bx];
-        if (y != py)
-        {
+        if (y != py) {
           gfx->fillRect(x, y, bw - 1, py - y, bar_color[(y < py)]);
           prev_y[bx] = y;
         }
         py = peak_y[bx] + 1;
-        if (py < y)
-        {
+        if (py < y) {
           gfx->writeFastHLine(x, py - 1, bw - 1, bgcolor(gfx, py - 1));
-        }
-        else
-        {
+        } else {
           py = y - 1;
         }
-        if (peak_y[bx] != py)
-        {
+        if (peak_y[bx] != py) {
           peak_y[bx] = py;
           gfx->writeFastHLine(x, py, bw - 1, TFT_WHITE);
         }
-
-
-        if (wave_enabled)
-        {
-          for (size_t bi = 0; bi < bw; ++bi)
-          {
+#if defined(WAVE)
+        if (wave_enabled) {
+          for (size_t bi = 0; bi < bw; ++bi) {
             size_t i = x + bi;
-            if (i >= gfx->width() || i >= WAVE_SIZE) { break; }
-            y = wave_y[i];
-            int32_t h = wave_h[i];
-            bool use_bg = (bi+1 == bw);
-            if (h>0)
-            { /// erase previous wave.
+            if (i >= gfx->width() || i >= WAVE_SIZE) {
+              break;
+            }
+            y              = wave_y[i];
+            int32_t h      = wave_h[i];
+            bool    use_bg = (bi + 1 == bw);
+            if (h > 0) {  /// erase previous wave.
               gfx->setAddrWindow(i, y, 1, h);
               h += y;
-              do
-              {
+              do {
                 uint32_t bg = (use_bg || y < peak_y[bx]) ? bgcolor(gfx, y)
-                            : (y == peak_y[bx]) ? 0xFFFFFFu
-                            : bar_color[(y >= prev_y[bx])];
+                              : (y == peak_y[bx])        ? 0xFFFFFFu
+                                                         : bar_color[(y >= prev_y[bx])];
                 gfx->writeColor(bg, 1);
               } while (++y < h);
             }
-            size_t i2 = i << 1;
+            size_t  i2 = i << 1;
             int32_t y1 = wave_next;
-            wave_next = ((header_height + dsp_height) >> 1) + (((256 - (raw_data[i2] + raw_data[i2 + 1])) * fft_height) >> 17);
+            wave_next  = ((header_height + dsp_height) >> 1) + (((256 - (raw_data[i2] + raw_data[i2 + 1])) * fft_height) >> 17);
             int32_t y2 = wave_next;
-            if (y1 > y2)
-            {
+            if (y1 > y2) {
               int32_t tmp = y1;
-              y1 = y2;
-              y2 = tmp;
+              y1          = y2;
+              y2          = tmp;
             }
-            y = y1;
-            h = y2 + 1 - y;
+            y         = y1;
+            h         = y2 + 1 - y;
             wave_y[i] = y;
             wave_h[i] = h;
-            if (h>0)
-            { /// draw new wave.
+            if (h > 0) {  /// draw new wave.
               gfx->setAddrWindow(i, y, 1, h);
               h += y;
-              do
-              {
+              do {
                 uint32_t bg = (y < prev_y[bx]) ? 0xFFCC33u : 0xFFFFFFu;
                 gfx->writeColor(bg, 1);
               } while (++y < h);
             }
           }
         }
+#endif
+        canvas.pushSprite(&display, offset_x, offset_y);
       }
-      gfx->display();
-      gfx->endWrite();
     }
   }
 
-  if (!gfx->displayBusy())
-  { // draw volume bar
+  if (!gfx->displayBusy()) {  // draw volume bar
     static int px;
-    uint8_t v = M5.Speaker.getChannelVolume(m5spk_virtual_channel);
-    int x = v * (gfx->width()) >> 8;
-    if (px != x)
-    {
+    uint8_t    v = M5.Speaker.getChannelVolume(m5spk_virtual_channel);
+    int        x = v * (gfx->width()) >> 8;
+    if (px != x) {
       gfx->fillRect(x, 6, px - x, 2, px < x ? 0xAAFFAAu : 0u);
-      gfx->display();
+      canvas.pushSprite(&display, offset_x, offset_y);
       px = x;
     }
   }
 }
 
-
 #ifdef USE_AVATAR
 using namespace m5avatar;
 Avatar* avatar;
 
-void lipSync(void *args)
-{
-  float gazeX, gazeY;
-  int level = 0;
-  DriveContext *ctx = (DriveContext *)args;
-  Avatar *avatar = ctx->getAvatar();
-   for (;;)
-  {
+void lipSync(void* args) {
+  float         gazeX, gazeY;
+  int           level  = 0;
+  DriveContext* ctx    = (DriveContext*)args;
+  Avatar*       avatar = ctx->getAvatar();
+  for (;;) {
     level = abs(*out.getBuffer());
-    if(level<1500) level = 0;
-    if(level > 15000)
-    {
+    if (level < 1500) level = 0;
+    if (level > 15000) {
       level = 15000;
     }
-    float open = (float)level/15000.0;
+    float open = (float)level / 15000.0;
     avatar->setMouthOpenRatio(open);
     avatar->getGaze(&gazeY, &gazeX);
     avatar->setRotation(gazeX * 5);
-     delay(50);
+    delay(50);
   }
 }
 #endif
 
+void setupDisplay(void) {
+  display.begin();
 
-void setup(void)
-{
-  auto cfg = M5.config();
-
-  cfg.external_spk = true;    /// use external speaker (SPK HAT / ATOMIC SPK)
-//cfg.external_spk_detail.omit_atomic_spk = true; // exclude ATOMIC SPK
-//cfg.external_spk_detail.omit_spk_hat    = true; // exclude SPK HAT
-
-  M5.begin(cfg);
-
-  preallocateBuffer = malloc(preallocateBufferSize);
-  preallocateCodec = malloc(preallocateCodecSize);
-  if (!preallocateBuffer || !preallocateCodec) {
-    M5.Display.printf("FATAL ERROR:  Unable to preallocate %d bytes for app\n", preallocateBufferSize + preallocateCodecSize);
-    for (;;) { delay(1000); }
+  if (display.width() < display.height()) {
+    display.setRotation(display.getRotation() ^ 1);
   }
 
-  { /// custom setting
-    auto spk_cfg = M5.Speaker.config();
-    /// Increasing the sample_rate will improve the sound quality instead of increasing the CPU load.
-    spk_cfg.sample_rate = 96000; // default:64000 (64kHz)  e.g. 48000 , 50000 , 80000 , 96000 , 100000 , 128000 , 144000 , 192000 , 200000
-    spk_cfg.task_pinned_core = APP_CPU_NUM;
-    M5.Speaker.config(spk_cfg);
+  lcd_width  = display.width();
+  lcd_height = display.height();
+
+  display.setFont(&fonts::lgfxJapanGothic_12);
+  display.setTextWrap(false);
+  display.setCursor(0, 8);
+
+  offset_x = display.width() - (display.width() >> 2) - 20;
+  offset_y = display.height() - (display.height() >> 2) - 5;
+}
+
+void setupLevelMeter(void) {
+  canvas.setColorDepth(display.getColorDepth());
+  canvas.setFont(&fonts::lgfxJapanGothic_8);
+  if (canvas.createSprite(display.width() >> 2, display.height() >> 2)) {
+    canvas.clear();
+    gfxSetup(&canvas);
+    canvas.pushSprite(&display, offset_x, offset_y);
+    display.display();
+  } else {
+    log_e("can't allocate.");
   }
-  M5.Speaker.begin();
+}
 
-  gfx1 = &M5.Display;
-
-#ifdef USE_AVATAR
-  gfx2 = new M5UnitLCD(M5.Ex_I2C.getSDA(), M5.Ex_I2C.getSCL());
-  if(!gfx2->init()) {
-    delete gfx2;
-    gfx2 = new M5UnitOLED(M5.Ex_I2C.getSDA(), M5.Ex_I2C.getSCL());
-    if (!gfx2->init())
-    {
-      delete gfx2;
-      gfx2 = nullptr;
-    }
-  }
-
-  if (gfx2)
-  {
-    gfx2->setRotation(3);
-    gfx2->fillScreen((uint16_t)TFT_BLACK);
-#ifdef SWAP_DISPLAY
-    std::swap(gfx1, gfx2);
-#endif
-    avatar = new Avatar(new DogFace(gfx2));
-    switch (gfx2->getBoard())
-    {
-    case m5::board_t::board_M5UnitLCD:
-      avatar->setScale(0.5);
-      avatar->setOffset(-40, -50);
-      break;
-
-    case m5::board_t::board_M5UnitOLED:
-      avatar->setScale(0.4);
-      avatar->setOffset(-95, -90);
-      break;
-
-    default:
-      break;
-    }
-    ColorPalette cp;
-    cp.set(COLOR_PRIMARY   , TFT_WHITE);
-    cp.set(COLOR_BACKGROUND, TFT_BLACK);
-    avatar->setColorPalette(cp);
-    avatar->init(); // start drawing
-    avatar->addTask(lipSync, "lipSync");
-  }
-#endif
-
-  gfx1->println("Connecting to WiFi");
+void setupWiFi(void) {
   WiFi.disconnect();
   WiFi.softAPdisconnect(true);
   WiFi.mode(WIFI_STA);
 
-#if defined ( WIFI_SSID ) &&  defined ( WIFI_PASS )
+#if defined(WIFI_SSID) && defined(WIFI_PASS)
   WiFi.begin(WIFI_SSID, WIFI_PASS);
 #else
   WiFi.begin();
 #endif
 
+  display.print(" Connecting to WiFi");
   // Try forever
   while (WiFi.status() != WL_CONNECTED) {
-    gfx1->print(".");
+    display.print(".");
     delay(100);
   }
-  gfx1->clear();
 
-  gfxSetup(gfx1);
+  display.clear();
+}
+
+void setupAudio(void) {
+  auto cfg = M5.config();
+
+  // for ATOMIC SPK
+  cfg.external_spk = true;  // use external speaker (SPK HAT / ATOMIC SPK)
+  M5.begin(cfg);
+
+  preallocateBuffer = malloc(preallocateBufferSize);
+  preallocateCodec  = malloc(preallocateCodecSize);
+  if (!preallocateBuffer || !preallocateCodec) {
+    // M5.Display.printf("FATAL ERROR:  Unable to preallocate %d bytes for app\n", preallocateBufferSize + preallocateCodecSize);
+    for (;;) {
+      delay(1000);
+    }
+  }
+
+  {  // custom setting
+    auto spk_cfg = M5.Speaker.config();
+    // Increasing the sample_rate will improve the sound quality instead of increasing the CPU load.
+    spk_cfg.sample_rate      = 128000;  // default:64000 (64kHz)  e.g. 48000 , 50000 , 80000 , 96000 , 100000 , 128000 , 144000 , 192000 , 200000
+    spk_cfg.task_pinned_core = APP_CPU_NUM;
+    spk_cfg.i2s_port         = i2s_port_t::I2S_NUM_1;  // CVBS use IS2_NUM_0. Audio use I2S_NUM_1.
+    M5.Speaker.config(spk_cfg);
+  }
+
+  M5.Speaker.begin();
+
+  // for LCDTV Speaker
+  M5.Speaker.setChannelVolume(m5spk_virtual_channel, 255 / 3);  // 0-255
 
   play(station_index);
+}
 
-  xTaskCreatePinnedToCore(decodeTask, "decodeTask", 4096, nullptr, 5, nullptr, PRO_CPU_NUM);
+void setupAvatar(void) {
+#ifdef USE_AVATAR
+  avatar = new Avatar(&sp_avatar);
 
+  avatar->setScale(0.7);
+  avatar->setOffset(-35, 0);
+
+  ColorPalette cp;
+  cp.set(COLOR_PRIMARY, TFT_WHITE);
+  cp.set(COLOR_BACKGROUND, TFT_BLACK);
+  avatar->setColorPalette(cp);
+  avatar->init();  // start drawing
+  avatar->addTask(lipSync, "lipSync");
+#endif
+}
+
+void setupFastLED(void) {
 #ifdef USE_FASTLED
-  if (M5.getBoard() == m5::board_t::board_M5Stack)
-  {
+  if (M5.getBoard() == m5::board_t::board_M5Stack) {
     FastLED.addLeds<SK6812, GPIO_NUM_15, GRB>(leds, NUM_LEDS);  // GRB ordering is typical
-  }
-  else
-  if (M5.getBoard() == m5::board_t::board_M5StackCore2)
-  {
+  } else if (M5.getBoard() == m5::board_t::board_M5StackCore2) {
     FastLED.addLeds<SK6812, GPIO_NUM_25, GRB>(leds, NUM_LEDS);  // GRB ordering is typical
   }
   FastLED.setBrightness(32);
@@ -774,54 +722,55 @@ void setup(void)
 #endif
 }
 
-void loop(void)
-{
-  gfxLoop(gfx1);
+void setup(void) {
+  setupDisplay();
+  setupWiFi();
+  setupLevelMeter();
+  setupAudio();
+  setupAvatar();
+
+  xTaskCreatePinnedToCore(decodeTask, "decodeTask", 2048, nullptr, 5, nullptr, PRO_CPU_NUM);
+
+  setupFastLED();
+}
+
+void loop(void) {
+  gfxLoop(&canvas);
+  display.startWrite();  //再生途中でstartWriteのカウントが更新されてしまうので、ここに記述。
+  display.display();
 
   {
     static int prev_frame;
-    int frame;
-    do
-    {
+    int        frame;
+    do {
       delay(1);
-    } while (prev_frame == (frame = millis() >> 3)); /// 8 msec cycle wait
+    } while (prev_frame == (frame = millis() >> 3));  /// 8 msec cycle wait
     prev_frame = frame;
   }
 
   M5.update();
-  if (M5.BtnA.wasPressed())
-  {
+
+  if (M5.BtnA.wasPressed()) {
     M5.Speaker.tone(440, 50);
   }
-  if (M5.BtnA.wasDeciedClickCount())
-  {
-    switch (M5.BtnA.getClickCount())
-    {
-    case 1:
-      M5.Speaker.tone(1000, 100);
-      if (++station_index >= stations) { station_index = 0; }
-      play(station_index);
-      break;
 
-    case 2:
-      M5.Speaker.tone(800, 100);
-      if (station_index == 0) { station_index = stations; }
-      play(--station_index);
-      break;
-    }
-  }
-  if (M5.BtnA.isHolding() || M5.BtnB.isPressed() || M5.BtnC.isPressed())
-  {
-    size_t v = M5.Speaker.getChannelVolume(m5spk_virtual_channel);
-    int add = (M5.BtnB.isPressed()) ? -1 : 1;
-    if (M5.BtnA.isHolding())
-    {
-      add = M5.BtnA.getClickCount() ? -1 : 1;
-    }
-    v += add;
-    if (v <= 255)
-    {
-      M5.Speaker.setChannelVolume(m5spk_virtual_channel, v);
+  if (M5.BtnA.wasDeciedClickCount()) {
+    switch (M5.BtnA.getClickCount()) {
+      case 1:
+        M5.Speaker.tone(1000, 100);
+        if (++station_index >= stations) {
+          station_index = 0;
+        }
+        play(station_index);
+        break;
+
+      case 2:
+        M5.Speaker.tone(800, 100);
+        if (station_index == 0) {
+          station_index = stations;
+        }
+        play(--station_index);
+        break;
     }
   }
 }

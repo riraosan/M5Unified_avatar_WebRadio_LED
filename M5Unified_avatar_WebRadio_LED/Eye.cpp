@@ -11,15 +11,15 @@ Eye::Eye(uint16_t x, uint16_t y, uint16_t r, bool isLeft) : Eye(r, isLeft) {}
 Eye::Eye(uint16_t r, bool isLeft) : r{r}, isLeft{isLeft} {}
 
 void Eye::draw(M5Canvas *spi, BoundingRect rect, DrawContext *ctx) {
-  Expression exp = ctx->getExpression();
-  uint32_t x = rect.getCenterX();
-  uint32_t y = rect.getCenterY();
-  Gaze g = ctx->getGaze();
-  float openRatio = ctx->getEyeOpenRatio();
-  uint32_t offsetX = g.getHorizontal() * 3;
-  uint32_t offsetY = g.getVertical() * 3;
-  uint32_t primaryColor = COLOR_DEPTH == 1 ? 1 : ctx->getColorPalette()->get(COLOR_PRIMARY);
-  uint32_t backgroundColor = COLOR_DEPTH == 1 ? 0 : ctx->getColorPalette()->get(COLOR_BACKGROUND);
+  Expression exp             = ctx->getExpression();
+  uint32_t   x               = rect.getCenterX();
+  uint32_t   y               = rect.getCenterY();
+  Gaze       g               = ctx->getGaze();
+  float      openRatio       = ctx->getEyeOpenRatio();
+  uint32_t   offsetX         = g.getHorizontal() * 3;
+  uint32_t   offsetY         = g.getVertical() * 3;
+  uint32_t   primaryColor    = COLOR_DEPTH == 1 ? 1 : ctx->getColorPalette()->get(COLOR_PRIMARY);
+  uint32_t   backgroundColor = COLOR_DEPTH == 1 ? 0 : ctx->getColorPalette()->get(COLOR_BACKGROUND);
   if (openRatio > 0) {
     spi->fillCircle(x + offsetX, y + offsetY, r, (uint16_t)primaryColor);
     // TODO(meganetaaan): Refactor
@@ -37,8 +37,8 @@ void Eye::draw(M5Canvas *spi, BoundingRect rect, DrawContext *ctx) {
       int x0, y0, w, h;
       x0 = x + offsetX - r;
       y0 = y + offsetY - r;
-      w = r * 2 + 4;
-      h = r + 2;
+      w  = r * 2 + 4;
+      h  = r + 2;
       if (exp == Expression::Happy) {
         y0 += r;
         spi->fillCircle(x + offsetX, y + offsetY, r / 1.5, (uint16_t)backgroundColor);
@@ -48,8 +48,8 @@ void Eye::draw(M5Canvas *spi, BoundingRect rect, DrawContext *ctx) {
   } else {
     int x1 = x - r + offsetX;
     int y1 = y - 2 + offsetY;
-    int w = r * 2;
-    int h = 4;
+    int w  = r * 2;
+    int h  = 4;
     spi->fillRect(x1, y1, w, h, (uint16_t)primaryColor);
   }
 }
