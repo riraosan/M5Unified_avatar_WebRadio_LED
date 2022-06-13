@@ -1,3 +1,37 @@
+# M5Unified_avatar_WebRadio_LED_and_ES9038Q2M
+M5Unified_avatar_WebRadio_LED_and_ES9038Q2M
+
+@riraosan
+
+このフォルダにあるファイル一式は、以下の機能を実現しています。
+
+- レベルメーターとスタックチャンの顔をデジタルTVのコンポジットへ出力する（@riraosanが作成したESP32_8BIT_CVBSライブラリを使用）
+- スタックチャンとレベルメーターを同じ画面へ出力する（スタックチャンのインスタンスにM5Canvasのポインタを渡せるように改修）
+- WebRadioからのMP3再生をI2S経由で外部DAC(ES9038Q2M)へ出力する(MP3@192KHz, 44100Hz, 32bit※16bitでないことに注意してください）
+
+@riraosanは次の機器構成でこのフォルダのサンプルプログラムが動作することを確認しました。
+
+- M5STAC ATOM Lite
+- ATOMIC TF-CARDモジュール
+- ES9038Q2M 中華DAC（メーカー不明）
+- デジタルTV（コンポジット入力付）
+
+ATOM Lite以外で動作確認をしていません。
+
+patchフォルダに@riraosanが改修したSpeaker_Class.cppとSpeaker_Class.hppを格納しています。i2s_writeをi2s_write_expandに置き換えました。ご使用の際は、M5Unifiedライブラリの同名ファイルを置き換えてください。もちろんサンプリングビットが32bitのDACが必要です。
+
+DACのLOCKが度々外れる場合は、I2Sのバッファカウントとバッファレングスの値を調整してください。setupAudio()内で@riraosanのDACで最適化した設定をおこなっています。
+
+platformio.iniを同梱しました。使用したライブラリはこのファイルを参照してください。
+
+このサンプルを公開していただきました@robo8080さん、@lovyan03さんに感謝いたします。ありがとうございました。
+
+どこかのどなたかのなんらかに貢献できましたら幸いです。
+
+以下、オリジナルの本文です。
+
+---
+
 # M5Unified_avatar_WebRadio_LED
 M5Unified_avatar_WebRadio_LED
 

@@ -4,8 +4,8 @@
 
 #define USE_AVATAR
 
-//#define WIFI_SSID "YOUR_SSID"
-//#define WIFI_PASS "YOUR_PASSWORD"
+#define WIFI_SSID ""
+#define WIFI_PASS ""
 
 #include <HTTPClient.h>
 #include <math.h>
@@ -93,14 +93,14 @@ static constexpr uint8_t m5spk_virtual_channel = 0;
 /// set web radio station url
 static constexpr const char* station_list[][2] =
     {
-        {"MAXXED Out", "http://149.56.195.94:8015/steam"},
+        {"Lite Favorites", "http://naxos.cdnstream.com:80/1255_128"},
         {"Asia Dream", "http://igor.torontocast.com:1025/;.-mp3"},
         {"thejazzstream", "http://wbgo.streamguys.net/thejazzstream"},
+        {"MAXXED Out", "http://149.56.195.94:8015/steam"},
         {"181-beatles_128k", "http://listen.181fm.com/181-beatles_128k.mp3"},
         {"illstreet-128-mp3", "http://ice1.somafm.com/illstreet-128-mp3"},
         {"bootliquor-128-mp3", "http://ice1.somafm.com/bootliquor-128-mp3"},
         {"dronezone-128-mp3", "http://ice1.somafm.com/dronezone-128-mp3"},
-        {"Lite Favorites", "http://naxos.cdnstream.com:80/1255_128"},
         {"Classic FM", "http://media-ice.musicradio.com:80/ClassicFMMP3"},
 };
 static constexpr const size_t stations = sizeof(station_list) / sizeof(station_list[0]);
@@ -235,7 +235,7 @@ public:
   }
 };
 
-static constexpr const int       preallocateBufferSize = 5 * 1024;
+static constexpr const int       preallocateBufferSize = 10 * 1024;
 static constexpr const int       preallocateCodecSize  = 29192;  // MP3 codec max mem needed
 static void*                     preallocateBuffer     = nullptr;
 static void*                     preallocateCodec      = nullptr;
@@ -307,6 +307,7 @@ static void decodeTask(void*) {
       buff    = new AudioFileSourceBuffer(file, preallocateBuffer, preallocateBufferSize);
       decoder = new AudioGeneratorMP3(preallocateCodec, preallocateCodecSize);
       decoder->begin(buff, &out);
+      delay(1000);
     }
     if (decoder && decoder->isRunning()) {
       if (!decoder->loop()) {
@@ -651,19 +652,20 @@ void setupWiFi(void) {
 #endif
 
   display.print(" Connecting to WiFi");
+  display.setTextWrap(true);
   // Try forever
   while (WiFi.status() != WL_CONNECTED) {
     display.print(".");
     delay(100);
   }
-
+  display.setTextWrap(false);
   display.clear();
 }
 
 void setupAudio(void) {
   auto cfg = M5.config();
 
-  // for ATOMIC SPK
+  // for ATOMI SPK
   cfg.external_spk = true;  // use external speaker (SPK HAT / ATOMIC SPK)
   M5.begin(cfg);
 
@@ -679,16 +681,28 @@ void setupAudio(void) {
   {  // custom setting
     auto spk_cfg = M5.Speaker.config();
     // Increasing the sample_rate will improve the sound quality instead of increasing the CPU load.
-    spk_cfg.sample_rate      = 128000;  // default:64000 (64kHz)  e.g. 48000 , 50000 , 80000 , 96000 , 100000 , 128000 , 144000 , 192000 , 200000
+    spk_cfg.sample_rate      = 192000 * 2;  // default:64000 (64kH z)  e.g. 48000 , 50000 , 80000 , 96000 , 100000 , 128000 , 144000 , 192000 , 200000
     spk_cfg.task_pinned_core = APP_CPU_NUM;
     spk_cfg.i2s_port         = i2s_port_t::I2S_NUM_1;  // CVBS use IS2_NUM_0. Audio use I2S_NUM_1.
+    spk_cfg.pin_bck          = 21;
+    spk_cfg.pin_ws           = 22;
+    spk_cfg.pin_data_out     = 25;
+    spk_cfg.stereo           = true;
+    spk_cfg.use_dac          = false;
+
+    // for ES9038Q2M VR1.07 DAC Board
+    spk_cfg.dma_buf_count    = 16;
+    spk_cfg.dma_buf_len      = 96;
+    spk_cfg.bits_per_sample  = I2S_BITS_PER_SAMPLE_32BIT;//DACのサンプリングビットが32の方はこちら
+    //spk_cfg.bits_per_sample  = I2S_BITS_PER_SAMPLE_16BIT;//DACのサンプリングビットが16の方はこちら
+
     M5.Speaker.config(spk_cfg);
   }
 
   M5.Speaker.begin();
 
   // for LCDTV Speaker
-  M5.Speaker.setChannelVolume(m5spk_virtual_channel, 255 / 3);  // 0-255
+  M5.Speaker.setAllChannelVolume(128);  // 0-255
 
   play(station_index);
 }
