@@ -4,10 +4,8 @@
 
 #define USE_AVATAR
 
-#define WIFI_SSID "Buffalo-C130"
-#define WIFI_PASS "nnkxnpshmhai6"
-//#define WIFI_SSID "俺のiPhone"
-//#define WIFI_PASS "room03601"
+#define WIFI_SSID ""
+#define WIFI_PASS ""
 
 #include <HTTPClient.h>
 #include <math.h>
