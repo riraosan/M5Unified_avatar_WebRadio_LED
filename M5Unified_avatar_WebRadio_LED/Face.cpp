@@ -60,7 +60,7 @@ Face::Face(Drawable *mouth, BoundingRect *mouthPos, Drawable *eyeR,
       eyeLPos{eyeLPos},
       eyeblowRPos{eyeblowRPos},
       eyeblowLPos{eyeblowLPos},
-      boundingRect{new BoundingRect(0, 0, 320, 240)},
+      boundingRect{new BoundingRect(0, 0, 255, 239)},
       sprite{new M5Canvas()},
       tmpSpr{new M5Canvas()} {}
 
@@ -91,7 +91,7 @@ Face::Face(Drawable *mouth, BoundingRect *mouthPos, Drawable *eyeR,
       eyeLPos{eyeLPos},
       eyeblowRPos{eyeblowRPos},
       eyeblowLPos{eyeblowLPos},
-      boundingRect{new BoundingRect(0, 0, 320, 240)},
+      boundingRect{new BoundingRect(0, 0, 255, 239)},
       sprite{new M5Canvas(device)},
       tmpSpr{new M5Canvas(device)} {}
 
@@ -106,7 +106,7 @@ Face::Face(M5Canvas *canvas) : mouth(new Mouth(50, 90, 4, 60)),
                                eyeLPos(new BoundingRect(96, 230)),
                                eyeblowRPos(new BoundingRect(67, 96)),
                                eyeblowLPos(new BoundingRect(72, 230)),
-                               boundingRect(new BoundingRect(0, 0, 320, 240)),
+                               boundingRect(new BoundingRect(0, 0, 255, 239)),
                                sprite(canvas) {}
 
 Face::~Face() {
@@ -148,9 +148,11 @@ void Face::draw(DrawContext *ctx) {
   if (!sprite->createSprite(boundingRect->getWidth(), boundingRect->getHeight())) {
     log_e("cannot allocate face sprite");
   }
+
   if (COLOR_DEPTH != 1) {
     sprite->fillSprite(ctx->getColorPalette()->get(COLOR_BACKGROUND));
   }
+
   float breath = _min(1.0f, ctx->getBreath());
 
   // TODO(meganetaaan): unify drawing process of each parts

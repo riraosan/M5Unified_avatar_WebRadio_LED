@@ -4,11 +4,14 @@
 
 #define USE_AVATAR
 
-#define WIFI_SSID ""
-#define WIFI_PASS ""
+#define WIFI_SSID "Buffalo-C130"
+#define WIFI_PASS "nnkxnpshmhai6"
+//#define WIFI_SSID "俺のiPhone"
+//#define WIFI_PASS "room03601"
 
 #include <HTTPClient.h>
 #include <math.h>
+#include <Ticker.h>
 
 /// need ESP8266Audio library. ( URL : https://github.com/earlephilhower/ESP8266Audio/ )
 #include <AudioOutput.h>
@@ -24,6 +27,9 @@ static ESP32_8BIT_CVBS display;
 static M5Canvas        canvas;
 static M5Canvas        sp_avatar(&display);
 
+Ticker startWait;
+bool   decodeActive = false;
+
 static uint32_t lcd_width;
 static uint32_t lcd_height;
 static int32_t  offset_x;
@@ -31,7 +37,7 @@ static int32_t  offset_y;
 
 #ifdef USE_AVATAR
 #include "Avatar.h"
-#include "faces/DogFace.h"
+//#include "faces/DogFace.h"
 #endif
 
 #ifdef USE_FASTLED
@@ -93,9 +99,9 @@ static constexpr uint8_t m5spk_virtual_channel = 0;
 /// set web radio station url
 static constexpr const char* station_list[][2] =
     {
-        {"Lite Favorites", "http://naxos.cdnstream.com:80/1255_128"},
         {"Asia Dream", "http://igor.torontocast.com:1025/;.-mp3"},
         {"thejazzstream", "http://wbgo.streamguys.net/thejazzstream"},
+        {"Lite Favorites", "http://naxos.cdnstream.com:80/1255_128"},
         {"MAXXED Out", "http://149.56.195.94:8015/steam"},
         {"181-beatles_128k", "http://listen.181fm.com/181-beatles_128k.mp3"},
         {"illstreet-128-mp3", "http://ice1.somafm.com/illstreet-128-mp3"},
@@ -103,6 +109,7 @@ static constexpr const char* station_list[][2] =
         {"dronezone-128-mp3", "http://ice1.somafm.com/dronezone-128-mp3"},
         {"Classic FM", "http://media-ice.musicradio.com:80/ClassicFMMP3"},
 };
+
 static constexpr const size_t stations = sizeof(station_list) / sizeof(station_list[0]);
 
 class AudioOutputM5Speaker : public AudioOutput {
@@ -125,6 +132,7 @@ public:
     flush();
     return false;
   }
+
   virtual void flush(void) override {
     if (_tri_buffer_index) {
       _m5sound->playRaw(_tri_buffer[_tri_index], _tri_buffer_index, hertz, true, 1, _virtual_ch);
@@ -133,6 +141,7 @@ public:
       ++_update_count;
     }
   }
+
   virtual bool stop(void) override {
     flush();
     _m5sound->stop(_virtual_ch);
@@ -289,30 +298,41 @@ static void stop(void) {
 }
 
 static void play(size_t index) {
-  playindex = index;
+  playindex    = index;
+  decodeActive = false;
+}
+
+static void wait(void) {
+  decodeActive = true;
 }
 
 static void decodeTask(void*) {
+  play(station_index);
+
   for (;;) {
     delay(1);
     if (playindex != ~0u) {
       auto index = playindex;
       playindex  = ~0u;
       stop();
+
       meta_text[0]    = station_list[index][0];
       stream_title[0] = 0;
       meta_mod_bits   = 3;
-      file            = new AudioFileSourceICYStream(station_list[index][1]);
+
+      file = new AudioFileSourceICYStream(station_list[index][1]);
       file->RegisterMetadataCB(MDCallback, (void*)"ICY");
       buff    = new AudioFileSourceBuffer(file, preallocateBuffer, preallocateBufferSize);
       decoder = new AudioGeneratorMP3(preallocateCodec, preallocateCodecSize);
       decoder->begin(buff, &out);
-      delay(1000);
+      startWait.once_ms(500, wait);
     }
-    if (decoder && decoder->isRunning()) {
-      if (!decoder->loop()) {
-        decoder->stop();
-      }
+
+    if (decodeActive && decoder->isRunning()) {
+      decoder->loop();
+      // if (!decoder->loop()) {
+      //   decoder->stop();
+      // }
     }
   }
 }
@@ -337,7 +357,7 @@ static void gfxSetup(M5Canvas* gfx) {
   if (gfx->width() < gfx->height()) {
     gfx->setRotation(gfx->getRotation() ^ 1);
   }
-  gfx->setFont(&fonts::lgfxJapanGothic_8);
+  gfx->setFont(&fonts::lgfxJapanGothic_12);
   gfx->setTextWrap(false);
   gfx->setCursor(0, 8);
   gfx->print(" WebRadio player");
@@ -493,14 +513,14 @@ void gfxLoop(M5Canvas* gfx) {
       if (xe > (FFT_SIZE / 2)) {
         xe = (FFT_SIZE / 2);
       }
-      int32_t wave_next = ((header_height + dsp_height) >> 1) + (((256 - (raw_data[0] + raw_data[1])) * fft_height) >> 17);
+      // int32_t wave_next = ((header_height + dsp_height) >> 1) + (((256 - (raw_data[0] + raw_data[1])) * fft_height) >> 17);
 
       uint32_t bar_color[2] = {0x000033u, 0x99AAFFu};
 
       for (size_t bx = 0; bx <= xe; ++bx) {
         size_t x = bx * bw;
         if ((x & 7) == 0) {
-          canvas.pushSprite(&display, offset_x, offset_y);
+          // canvas.pushSprite(&display, offset_x, offset_y); //NG レベルメーターの描画速度を下げてしまう
           taskYIELD();
         }
         int32_t f = fft.get(bx);
@@ -568,8 +588,8 @@ void gfxLoop(M5Canvas* gfx) {
           }
         }
 #endif
-        canvas.pushSprite(&display, offset_x, offset_y);
       }
+      canvas.pushSprite(&display, offset_x, offset_y);
     }
   }
 
@@ -611,6 +631,7 @@ void lipSync(void* args) {
 
 void setupDisplay(void) {
   display.begin();
+  display.startWrite();
 
   if (display.width() < display.height()) {
     display.setRotation(display.getRotation() ^ 1);
@@ -619,22 +640,19 @@ void setupDisplay(void) {
   lcd_width  = display.width();
   lcd_height = display.height();
 
-  display.setFont(&fonts::lgfxJapanGothic_12);
-  display.setTextWrap(false);
-  display.setCursor(0, 8);
-
-  offset_x = display.width() - (display.width() >> 2) - 20;
-  offset_y = display.height() - (display.height() >> 2) - 5;
+  // offset_x = display.width() - (display.width() >> 2) - 20;
+  // offset_y = display.height() - (display.height() >> 2) - 5;
+  offset_x = 0;
+  offset_y = 8;
 }
 
 void setupLevelMeter(void) {
   canvas.setColorDepth(display.getColorDepth());
-  canvas.setFont(&fonts::lgfxJapanGothic_8);
-  if (canvas.createSprite(display.width() >> 2, display.height() >> 2)) {
+  canvas.setFont(&fonts::lgfxJapanGothic_12);
+  if (canvas.createSprite(display.width(), display.height() >> 2)) {
     canvas.clear();
     gfxSetup(&canvas);
     canvas.pushSprite(&display, offset_x, offset_y);
-    display.display();
   } else {
     log_e("can't allocate.");
   }
@@ -651,15 +669,15 @@ void setupWiFi(void) {
   WiFi.begin();
 #endif
 
-  display.print(" Connecting to WiFi");
-  display.setTextWrap(true);
+  // canvas.setCursor(0, 8);
+  canvas.print(" Connecting");
   // Try forever
   while (WiFi.status() != WL_CONNECTED) {
-    display.print(".");
+    canvas.print(".");
+    canvas.pushSprite(&display, offset_x, offset_y);
+    display.display();
     delay(100);
   }
-  display.setTextWrap(false);
-  display.clear();
 }
 
 void setupAudio(void) {
@@ -680,31 +698,27 @@ void setupAudio(void) {
 
   {  // custom setting
     auto spk_cfg = M5.Speaker.config();
-    // Increasing the sample_rate will improve the sound quality instead of increasing the CPU load.
-    spk_cfg.sample_rate      = 192000 * 2;  // default:64000 (64kH z)  e.g. 48000 , 50000 , 80000 , 96000 , 100000 , 128000 , 144000 , 192000 , 200000
+    //  sample_rateを上げると、CPU負荷が上がる代わりに音質が向上します。
+    spk_cfg.sample_rate      = 160000 * 2;  // default:64000 (64kH z)  e.g. 48000 , 50000 , 80000 , 96000 , 100000 , 128000 , 144000 , 192000 , 200000
     spk_cfg.task_pinned_core = APP_CPU_NUM;
     spk_cfg.i2s_port         = i2s_port_t::I2S_NUM_1;  // CVBS use IS2_NUM_0. Audio use I2S_NUM_1.
-    spk_cfg.pin_bck          = 21;
+    spk_cfg.pin_bck          = 33;
     spk_cfg.pin_ws           = 22;
-    spk_cfg.pin_data_out     = 25;
+    spk_cfg.pin_data_out     = 19;
     spk_cfg.stereo           = true;
-    spk_cfg.use_dac          = false;
+    spk_cfg.use_dac          = false;  // about internal DAC
 
     // for ES9038Q2M VR1.07 DAC Board
-    spk_cfg.dma_buf_count    = 16;
-    spk_cfg.dma_buf_len      = 96;
-    spk_cfg.bits_per_sample  = I2S_BITS_PER_SAMPLE_32BIT;//DACのサンプリングビットが32の方はこちら
-    //spk_cfg.bits_per_sample  = I2S_BITS_PER_SAMPLE_16BIT;//DACのサンプリングビットが16の方はこちら
+    spk_cfg.dma_buf_count   = 40;
+    spk_cfg.dma_buf_len     = 64;
+    spk_cfg.bits_per_sample = I2S_BITS_PER_SAMPLE_32BIT;  // DACのサンプリングビットが32の方はこちら
+    // spk_cfg.bits_per_sample  = I2S_BITS_PER_SAMPLE_16BIT; //DACのサンプリングビットが16の方はこちら
 
     M5.Speaker.config(spk_cfg);
   }
 
-  M5.Speaker.begin();
-
   // for LCDTV Speaker
-  M5.Speaker.setAllChannelVolume(128);  // 0-255
-
-  play(station_index);
+  M5.Speaker.setAllChannelVolume(64);  // 0-255
 }
 
 void setupAvatar(void) {
@@ -712,7 +726,7 @@ void setupAvatar(void) {
   avatar = new Avatar(&sp_avatar);
 
   avatar->setScale(0.7);
-  avatar->setOffset(-35, 0);
+  avatar->setOffset(-30, 25);
 
   ColorPalette cp;
   cp.set(COLOR_PRIMARY, TFT_WHITE);
@@ -738,19 +752,21 @@ void setupFastLED(void) {
 
 void setup(void) {
   setupDisplay();
-  setupWiFi();
-  setupLevelMeter();
   setupAudio();
+  setupLevelMeter();
   setupAvatar();
+  // setupFastLED();
 
+  setupWiFi();
+
+  delay(1000);
+
+  M5.Speaker.begin();
   xTaskCreatePinnedToCore(decodeTask, "decodeTask", 2048, nullptr, 5, nullptr, PRO_CPU_NUM);
-
-  setupFastLED();
 }
 
 void loop(void) {
   gfxLoop(&canvas);
-  display.startWrite();  //再生途中でstartWriteのカウントが更新されてしまうので、ここに記述。
   display.display();
 
   {

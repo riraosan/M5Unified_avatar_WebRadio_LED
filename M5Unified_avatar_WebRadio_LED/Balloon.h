@@ -49,8 +49,7 @@ public:
                      backgroundColor);
     spi->fillTriangle(cx - 60, cy - 40, cx - 10, cy - 10, cx - 40, cy - 10,
                       (uint16_t)backgroundColor);
-    spi->drawString(text, cx, cy,
-                    2);  // Continue printing from new x position
+    spi->drawString(text, cx, cy, 2);  // Continue printing from new x position
 #endif
   }
 };

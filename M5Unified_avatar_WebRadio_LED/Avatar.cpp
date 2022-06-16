@@ -118,13 +118,15 @@ void Avatar::init() {
   //                          1,            /* Priority of the task */
   //                          NULL);        /* Task handle. */
   xTaskCreatePinnedToCore(
-      drawLoop,             /* Function to implement the task */
-      "drawLoop",           /* Name of the task */
-      2048,                 /* Stack size in words */
-      ctx,                  /* Task input parameter */
-      1,                    /* Priority of the task */
-      NULL,                 /* Task handle. */
-      0);                   /* Core where the task should run */
+      drawLoop,   /* Function to implement the task */
+      "drawLoop", /* Name of the task */
+      4096,       /* Stack size in words */
+      ctx,        /* Task input parameter */
+      1,          /* Priority of the task */
+      NULL,       /* Task handle. */
+      APP_CPU_NUM); //modify by @riraosan
+      //    0);                   /* Core where the task should run */
+
   xTaskCreate(saccade,      /* Function to implement the task */
               "saccade",    /* Name of the task */
               1024,         /* Stack size in words */
