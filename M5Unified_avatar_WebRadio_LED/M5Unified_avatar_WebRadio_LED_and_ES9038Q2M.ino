@@ -5,8 +5,8 @@
 //#define USE_FASTLED
 #define AVATAR
 
-#define WIFI_SSID "your_ssid"
-#define WIFI_PASS "your_password"
+#define WIFI_SSID "Buffalo-C130"
+#define WIFI_PASS "nnkxnpshmhai6"
 
 #include <math.h>
 #include <WiFi.h>
@@ -688,7 +688,7 @@ void pressed(Button2& btn) {
   M5.Speaker.tone(440, 100);
 }
 
-void click(Button2& btn) {
+void doubleClick(Button2& btn) {
   if (btn == bRed) {
     M5.Speaker.tone(1000, 100);
     radio.play(true);
@@ -699,11 +699,14 @@ void click(Button2& btn) {
 }
 
 void longClick(Button2& btn) {
+  display.fillScreen(TFT_BLACK);
+  M5.Speaker.stop();
+  M5.Speaker.end();
+  delay(1000);
   ESP.restart();
-  delay(5000);
 }
 
-void doubleClick(Button2& btn) {
+void click(Button2& btn) {
   size_t v   = M5.Speaker.getChannelVolume(m5spk_virtual_channel);
   int    add = (btn == bRed) ? 5 : -5;
   v += add;
@@ -727,7 +730,6 @@ void setupButton(void) {
   bRed.setPressedHandler(pressed);
   bRed.setClickHandler(click);
   bRed.setDoubleClickHandler(doubleClick);
-  bRed.setLongClickHandler(longClick);
   bRed.setTripleClickHandler(tripleClick);
   bRed.begin(BUTTON_PIN26);
 
@@ -735,16 +737,11 @@ void setupButton(void) {
   bBlue.setPressedHandler(pressed);
   bBlue.setClickHandler(click);
   bBlue.setDoubleClickHandler(doubleClick);
-  bBlue.setLongClickHandler(longClick);
   bBlue.setTripleClickHandler(tripleClick);
   bBlue.begin(BUTTON_PIN32);
 
-  // Btn.setDoubleClickTime(300);
   Btn.setPressedHandler(pressed);
-  // Btn.setClickHandler(click);
-  // Btn.setDoubleClickHandler(doubleClick);
   Btn.setLongClickHandler(longClick);
-  // Btn.setTripleClickHandler(tripleClick);
   Btn.begin(BUTTON_PIN39);
 }
 
