@@ -182,7 +182,7 @@ namespace m5
 
     /// 実際に設定されたサンプリングレートの算出を行う;
     //const int32_t spk_sample_rate_x256 = (float)base * SAMPLERATE_MUL / ((float)(div_b * div_m * bits) / (float)div_a + (div_n * div_m * bits));
-    const int32_t spk_sample_rate_x256 = 160000 * 256;
+    const int32_t spk_sample_rate_x256 = 192000 * 256;
     //  ESP_EARLY_LOGW("Speaker_Class", "sample rate:%d Hz = %d MHz/(%d+(%d/%d))/%d/%d = %d Hz", self->_cfg.sample_rate, base / 1000000, div_n, div_b, div_a, div_m, bits, spk_sample_rate_x256 / SAMPLERATE_MUL);
 
 #if defined ( CONFIG_IDF_TARGET_ESP32C3 )

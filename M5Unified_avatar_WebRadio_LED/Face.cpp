@@ -106,7 +106,7 @@ Face::Face(M5Canvas *canvas) : mouth(new Mouth(50, 90, 4, 60)),
                                eyeLPos(new BoundingRect(96, 230)),
                                eyeblowRPos(new BoundingRect(67, 96)),
                                eyeblowLPos(new BoundingRect(72, 230)),
-                               boundingRect(new BoundingRect(0, 0, 255, 239)),
+                               boundingRect(new BoundingRect(0, 0, 255, 210)),
                                sprite(canvas) {}
 
 Face::~Face() {

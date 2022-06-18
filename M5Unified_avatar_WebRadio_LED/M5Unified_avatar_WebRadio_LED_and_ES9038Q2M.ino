@@ -1,42 +1,39 @@
 
+// 2022-06-18 MIT https://twitter.com/riraosan_0901
+
 // LEDレベルメータを使用する;
 //#define USE_FASTLED
+#define AVATAR
 
-#define USE_AVATAR
+#define WIFI_SSID "your_ssid"
+#define WIFI_PASS "your_password"
 
-#define WIFI_SSID ""
-#define WIFI_PASS ""
-
-#include <HTTPClient.h>
 #include <math.h>
-#include <Ticker.h>
+#include <WiFi.h>
+#include <nvs.h>
 
-/// need ESP8266Audio library. ( URL : https://github.com/earlephilhower/ESP8266Audio/ )
-#include <AudioOutput.h>
-#include <AudioFileSourceICYStream.h>
-#include <AudioFileSource.h>
-#include <AudioFileSourceBuffer.h>
-#include <AudioGeneratorMP3.h>
-#include <AudioOutputI2S.h>
+#include "WebRadio_Simple.hpp"
+
+#include <Button2.h>
+#define BUTTON_PIN26 26  // Button Unit RED
+#define BUTTON_PIN32 32  // Button Unit BLUE
+#define BUTTON_PIN39 39  // ATOM Lite Body Push Button
+
+static Button2 bRed;
+static Button2 bBlue;
+static Button2 Btn;
 
 #include <M5Unified.h>
 #include <ESP32_8BIT_CVBS.h>
 static ESP32_8BIT_CVBS display;
 static M5Canvas        canvas;
-static M5Canvas        sp_avatar(&display);
-
-Ticker startWait;
-bool   decodeActive = false;
 
 static uint32_t lcd_width;
 static uint32_t lcd_height;
 static int32_t  offset_x;
 static int32_t  offset_y;
 
-#ifdef USE_AVATAR
 #include "Avatar.h"
-//#include "faces/DogFace.h"
-#endif
 
 #ifdef USE_FASTLED
 #include <FastLED.h>
@@ -88,27 +85,8 @@ void clear_led_buff() {}
 void level_led(int level1, int level2) {}
 #endif
 
-LGFX_Device* gfx1 = nullptr;
-LGFX_Device* gfx2 = nullptr;
-
 /// set M5Speaker virtual channel (0-7)
 static constexpr uint8_t m5spk_virtual_channel = 0;
-
-/// set web radio station url
-static constexpr const char* station_list[][2] =
-    {
-        {"Asia Dream", "http://igor.torontocast.com:1025/;.-mp3"},
-        {"thejazzstream", "http://wbgo.streamguys.net/thejazzstream"},
-        {"Lite Favorites", "http://naxos.cdnstream.com:80/1255_128"},
-        {"MAXXED Out", "http://149.56.195.94:8015/steam"},
-        {"181-beatles_128k", "http://listen.181fm.com/181-beatles_128k.mp3"},
-        {"illstreet-128-mp3", "http://ice1.somafm.com/illstreet-128-mp3"},
-        {"bootliquor-128-mp3", "http://ice1.somafm.com/bootliquor-128-mp3"},
-        {"dronezone-128-mp3", "http://ice1.somafm.com/dronezone-128-mp3"},
-        {"Classic FM", "http://media-ice.musicradio.com:80/ClassicFMMP3"},
-};
-
-static constexpr const size_t stations = sizeof(station_list) / sizeof(station_list[0]);
 
 class AudioOutputM5Speaker : public AudioOutput {
 public:
@@ -130,7 +108,6 @@ public:
     flush();
     return false;
   }
-
   virtual void flush(void) override {
     if (_tri_buffer_index) {
       _m5sound->playRaw(_tri_buffer[_tri_index], _tri_buffer_index, hertz, true, 1, _virtual_ch);
@@ -139,7 +116,6 @@ public:
       ++_update_count;
     }
   }
-
   virtual bool stop(void) override {
     flush();
     _m5sound->stop(_virtual_ch);
@@ -242,30 +218,22 @@ public:
   }
 };
 
-static constexpr const int       preallocateBufferSize = 10 * 1024;
-static constexpr const int       preallocateCodecSize  = 29192;  // MP3 codec max mem needed
-static void*                     preallocateBuffer     = nullptr;
-static void*                     preallocateCodec      = nullptr;
-static constexpr size_t          WAVE_SIZE             = 320;
-static AudioOutputM5Speaker      out(&M5.Speaker, m5spk_virtual_channel);
-static AudioGenerator*           decoder = nullptr;
-static AudioFileSourceICYStream* file    = nullptr;
-static AudioFileSourceBuffer*    buff    = nullptr;
-static fft_t                     fft;
-static bool                      fft_enabled  = false;
-static bool                      wave_enabled = false;
-static uint16_t                  prev_y[(FFT_SIZE / 2) + 1];
-static uint16_t                  peak_y[(FFT_SIZE / 2) + 1];
-static int16_t                   wave_y[WAVE_SIZE];
-static int16_t                   wave_h[WAVE_SIZE];
-static int16_t                   raw_data[WAVE_SIZE * 2];
-static int                       header_height     = 0;
-static size_t                    station_index     = 0;
-static char                      stream_title[128] = {0};
-static const char*               meta_text[2]      = {nullptr, stream_title};
-static const size_t              meta_text_num     = sizeof(meta_text) / sizeof(meta_text[0]);
-static uint8_t                   meta_mod_bits     = 0;
-static volatile size_t           playindex         = ~0u;
+static constexpr size_t     WAVE_SIZE = 320;
+static AudioOutputM5Speaker out(&M5.Speaker, m5spk_virtual_channel);
+static SimpleWebRadio       radio(&out, PRO_CPU_NUM);
+static fft_t                fft;
+static bool                 fft_enabled  = false;
+static bool                 wave_enabled = false;
+static uint16_t             prev_y[(FFT_SIZE / 2) + 1];
+static uint16_t             peak_y[(FFT_SIZE / 2) + 1];
+static int16_t              wave_y[WAVE_SIZE];
+static int16_t              wave_h[WAVE_SIZE];
+static int16_t              raw_data[WAVE_SIZE * 2];
+static int                  header_height     = 0;
+static char                 stream_title[128] = {0};
+static const char*          meta_text[2]      = {nullptr, stream_title};
+static const size_t         meta_text_num     = sizeof(meta_text) / sizeof(meta_text[0]);
+static uint8_t              meta_mod_bits     = 0;
 
 static void MDCallback(void* cbData, const char* type, bool isUnicode, const char* string) {
   (void)cbData;
@@ -275,64 +243,8 @@ static void MDCallback(void* cbData, const char* type, bool isUnicode, const cha
   }
 }
 
-static void stop(void) {
-  if (decoder) {
-    decoder->stop();
-    delete decoder;
-    decoder = nullptr;
-  }
-
-  if (buff) {
-    buff->close();
-    delete buff;
-    buff = nullptr;
-  }
-  if (file) {
-    file->close();
-    delete file;
-    file = nullptr;
-  }
-  out.stop();
-}
-
-static void play(size_t index) {
-  playindex    = index;
-  decodeActive = false;
-}
-
-static void wait(void) {
-  decodeActive = true;
-}
-
-static void decodeTask(void*) {
-  play(station_index);
-
-  for (;;) {
-    delay(1);
-    if (playindex != ~0u) {
-      auto index = playindex;
-      playindex  = ~0u;
-      stop();
-
-      meta_text[0]    = station_list[index][0];
-      stream_title[0] = 0;
-      meta_mod_bits   = 3;
-
-      file = new AudioFileSourceICYStream(station_list[index][1]);
-      file->RegisterMetadataCB(MDCallback, (void*)"ICY");
-      buff    = new AudioFileSourceBuffer(file, preallocateBuffer, preallocateBufferSize);
-      decoder = new AudioGeneratorMP3(preallocateCodec, preallocateCodecSize);
-      decoder->begin(buff, &out);
-      startWait.once_ms(500, wait);
-    }
-
-    if (decodeActive && decoder->isRunning()) {
-      decoder->loop();
-      // if (!decoder->loop()) {
-      //   decoder->stop();
-      // }
-    }
-  }
+static void StCallback(void* cbData, int code, const char* string) {
+  Serial.println(string);
 }
 
 static uint32_t bgcolor(M5Canvas* gfx, int y) {
@@ -603,9 +515,12 @@ void gfxLoop(M5Canvas* gfx) {
   }
 }
 
-#ifdef USE_AVATAR
+#if defined(AVATAR)
+
 using namespace m5avatar;
-Avatar* avatar;
+
+Avatar*         avatar;
+static M5Canvas sp_avatar(&display);
 
 void lipSync(void* args) {
   float         gazeX, gazeY;
@@ -624,6 +539,20 @@ void lipSync(void* args) {
     avatar->setRotation(gazeX * 5);
     delay(50);
   }
+}
+
+void setupAvatar(void) {
+  avatar = new Avatar(&sp_avatar);
+
+  avatar->setScale(0.65);
+  avatar->setOffset(-30, 40);
+
+  ColorPalette cp;
+  cp.set(COLOR_PRIMARY, TFT_WHITE);
+  cp.set(COLOR_BACKGROUND, TFT_BLACK);
+  avatar->setColorPalette(cp);
+  avatar->init();  // start drawing
+  avatar->addTask(lipSync, "lipSync");
 }
 #endif
 
@@ -676,6 +605,9 @@ void setupWiFi(void) {
     display.display();
     delay(100);
   }
+
+  Serial.print("IP address:");
+  Serial.println(WiFi.localIP());
 }
 
 void setupAudio(void) {
@@ -685,19 +617,10 @@ void setupAudio(void) {
   cfg.external_spk = true;  // use external speaker (SPK HAT / ATOMIC SPK)
   M5.begin(cfg);
 
-  preallocateBuffer = malloc(preallocateBufferSize);
-  preallocateCodec  = malloc(preallocateCodecSize);
-  if (!preallocateBuffer || !preallocateCodec) {
-    // M5.Display.printf("FATAL ERROR:  Unable to preallocate %d bytes for app\n", preallocateBufferSize + preallocateCodecSize);
-    for (;;) {
-      delay(1000);
-    }
-  }
-
   {  // custom setting
     auto spk_cfg = M5.Speaker.config();
     //  sample_rateを上げると、CPU負荷が上がる代わりに音質が向上します。
-    spk_cfg.sample_rate      = 160000 * 2;  // default:64000 (64kH z)  e.g. 48000 , 50000 , 80000 , 96000 , 100000 , 128000 , 144000 , 192000 , 200000
+    spk_cfg.sample_rate      = 192000 * 2;  // default:64000 (64kH z)  e.g. 48000 , 50000 , 80000 , 96000 , 100000 , 128000 , 144000 , 192000 , 200000
     spk_cfg.task_pinned_core = APP_CPU_NUM;
     spk_cfg.i2s_port         = i2s_port_t::I2S_NUM_1;  // CVBS use IS2_NUM_0. Audio use I2S_NUM_1.
     spk_cfg.pin_bck          = 33;
@@ -715,24 +638,15 @@ void setupAudio(void) {
     M5.Speaker.config(spk_cfg);
   }
 
-  // for LCDTV Speaker
-  M5.Speaker.setAllChannelVolume(64);  // 0-255
-}
-
-void setupAvatar(void) {
-#ifdef USE_AVATAR
-  avatar = new Avatar(&sp_avatar);
-
-  avatar->setScale(0.7);
-  avatar->setOffset(-30, 25);
-
-  ColorPalette cp;
-  cp.set(COLOR_PRIMARY, TFT_WHITE);
-  cp.set(COLOR_BACKGROUND, TFT_BLACK);
-  avatar->setColorPalette(cp);
-  avatar->init();  // start drawing
-  avatar->addTask(lipSync, "lipSync");
-#endif
+  {
+    uint32_t nvs_handle;
+    if (!nvs_open("SimpleWebRadio", NVS_READONLY, &nvs_handle)) {
+      size_t volume;
+      nvs_get_u32(nvs_handle, "volume", &volume);
+      nvs_close(nvs_handle);
+      M5.Speaker.setChannelVolume(m5spk_virtual_channel, volume);
+    }
+  }
 }
 
 void setupFastLED(void) {
@@ -748,7 +662,94 @@ void setupFastLED(void) {
 #endif
 }
 
+void setupWebRadio(void) {
+  radio.onPlay = [](const char* station_name, const size_t station_idx) {
+    Serial.printf("onPlay:%d %s\n", station_idx, station_name);
+    meta_text[0]    = station_name;
+    stream_title[0] = 0;
+    meta_mod_bits   = 3;
+  };
+
+  radio.onChunk = [](const char* text) {
+    Serial.println(text);
+  };
+
+  radio.RegisterMetadataCB(MDCallback, (void*)"ICY");
+  radio.RegisterStatusCB(StCallback, (void*)"mp3");
+  if (!radio.begin()) {
+    Serial.println("failed: radio.begin()");
+    for (;;)
+      ;
+  }
+  radio.play();
+}
+
+void pressed(Button2& btn) {
+  M5.Speaker.tone(440, 100);
+}
+
+void click(Button2& btn) {
+  if (btn == bRed) {
+    M5.Speaker.tone(1000, 100);
+    radio.play(true);
+  } else if (btn == bBlue) {
+    M5.Speaker.tone(800, 100);
+    radio.play(false);
+  }
+}
+
+void longClick(Button2& btn) {
+  ESP.restart();
+  delay(5000);
+}
+
+void doubleClick(Button2& btn) {
+  size_t v   = M5.Speaker.getChannelVolume(m5spk_virtual_channel);
+  int    add = (btn == bRed) ? 5 : -5;
+  v += add;
+
+  if (v <= 255) {
+    M5.Speaker.setChannelVolume(m5spk_virtual_channel, v);
+  }
+  if (add > 0) {
+    M5.Speaker.tone(1000, 100);
+  } else {
+    M5.Speaker.tone(800, 100);
+  }
+}
+
+void tripleClick(Button2& btn) {
+  //?
+}
+
+void setupButton(void) {
+  bRed.setDoubleClickTime(300);
+  bRed.setPressedHandler(pressed);
+  bRed.setClickHandler(click);
+  bRed.setDoubleClickHandler(doubleClick);
+  bRed.setLongClickHandler(longClick);
+  bRed.setTripleClickHandler(tripleClick);
+  bRed.begin(BUTTON_PIN26);
+
+  bBlue.setDoubleClickTime(300);
+  bBlue.setPressedHandler(pressed);
+  bBlue.setClickHandler(click);
+  bBlue.setDoubleClickHandler(doubleClick);
+  bBlue.setLongClickHandler(longClick);
+  bBlue.setTripleClickHandler(tripleClick);
+  bBlue.begin(BUTTON_PIN32);
+
+  // Btn.setDoubleClickTime(300);
+  Btn.setPressedHandler(pressed);
+  // Btn.setClickHandler(click);
+  // Btn.setDoubleClickHandler(doubleClick);
+  Btn.setLongClickHandler(longClick);
+  // Btn.setTripleClickHandler(tripleClick);
+  Btn.begin(BUTTON_PIN39);
+}
+
 void setup(void) {
+  setupButton();
   setupDisplay();
   setupAudio();
   setupLevelMeter();
@@ -756,49 +757,28 @@ void setup(void) {
   // setupFastLED();
 
   setupWiFi();
-
-  delay(1000);
+  setupWebRadio();
 
   M5.Speaker.begin();
-  xTaskCreatePinnedToCore(decodeTask, "decodeTask", 2048, nullptr, 5, nullptr, PRO_CPU_NUM);
+}
+
+void wait(void) {
+  static int prev_frame;
+  int        frame;
+  do {
+    delay(1);
+  } while (prev_frame == (frame = millis() >> 3));  /// 8 msec cycle wait
+  prev_frame = frame;
 }
 
 void loop(void) {
   gfxLoop(&canvas);
   display.display();
 
-  {
-    static int prev_frame;
-    int        frame;
-    do {
-      delay(1);
-    } while (prev_frame == (frame = millis() >> 3));  /// 8 msec cycle wait
-    prev_frame = frame;
-  }
-
   M5.update();
+  bRed.loop();
+  bBlue.loop();
+  Btn.loop();
 
-  if (M5.BtnA.wasPressed()) {
-    M5.Speaker.tone(440, 50);
-  }
-
-  if (M5.BtnA.wasDeciedClickCount()) {
-    switch (M5.BtnA.getClickCount()) {
-      case 1:
-        M5.Speaker.tone(1000, 100);
-        if (++station_index >= stations) {
-          station_index = 0;
-        }
-        play(station_index);
-        break;
-
-      case 2:
-        M5.Speaker.tone(800, 100);
-        if (station_index == 0) {
-          station_index = stations;
-        }
-        play(--station_index);
-        break;
-    }
-  }
+  wait();
 }
