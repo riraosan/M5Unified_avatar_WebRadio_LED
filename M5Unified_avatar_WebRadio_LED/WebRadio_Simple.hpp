@@ -1,3 +1,4 @@
+
 /*
  * https://twitter.com/wakwak_koba/
  * modified https://twitter.com/riraosan_0901/
@@ -28,12 +29,14 @@ static byte initial_station = 0;  // Asia Dream
 
 class SimpleWebRadio : public WebRadio {
 public:
-  SimpleWebRadio(AudioOutput *_out, int cpuDecode, const uint16_t buffSize = 5 * 1024) : WebRadio(_out, cpuDecode, 16 * 1024), bufferSize(buffSize) {
+  SimpleWebRadio(AudioOutput *_out, int cpuDecode, const uint16_t buffSize = 5 * 1024)
+      : WebRadio(_out, cpuDecode, 2 * 1024), bufferSize(buffSize) {
     for (int i = 0; i < sizeof(station_list) / sizeof(station_list[0]); i++)
       stations.push_back(new station_t(this, station_list[i][0], station_list[i][1]));
   }
 
-  SimpleWebRadio(AudioOutput *_out, int cpuDecode, uint8_t *_buffer, const uint16_t buffSize) : WebRadio(_out, cpuDecode, 16 * 1024), buffer(_buffer), bufferSize(buffSize) {
+  SimpleWebRadio(AudioOutput *_out, int cpuDecode, uint8_t *_buffer, const uint16_t buffSize = 5 * 1024)
+      : WebRadio(_out, cpuDecode, 2 * 1024), buffer(_buffer), bufferSize(buffSize) {
     for (int i = 0; i < sizeof(station_list) / sizeof(station_list[0]); i++)
       stations.push_back(new station_t(this, station_list[i][0], station_list[i][1]));
   }
@@ -185,14 +188,14 @@ public:
 
 private:
   virtual void saveStationCore(uint32_t nvs_handle, WebRadio::Station *station) override {
-    nvs_set_u8(nvs_handle, "SimpleWebRadio", getIndex(station));
+    nvs_set_u8(nvs_handle, "WebRadio", getIndex(station));
   }
 
   virtual WebRadio::Station *restoreStationCore(uint32_t nvs_handle) override {
     uint8_t  idx_8;
     uint32_t idx_32;
 
-    if (nvs_get_u8(nvs_handle, "SimpleWebRadio", &idx_8)) {
+    if (nvs_get_u8(nvs_handle, "WebRadio", &idx_8)) {
       if (!nvs_get_u32(nvs_handle, "station", &idx_32)) {
         idx_8 = idx_32;
       } else {

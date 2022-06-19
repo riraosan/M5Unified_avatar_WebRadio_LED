@@ -31,11 +31,6 @@ protected:
     xTaskCreatePinnedToCore(&voidDecodeTask, "decode", stackDecode, this, 1, &decode_handle, cpuDecode);
   }
 
-  WebRadio(AudioOutput *_out, byte cpuDecode, uint16_t stackDecode, byte cpuDownload, uint16_t stackDownload) : out(_out) {
-    xTaskCreatePinnedToCore(&voidDecodeTask, "decode", stackDecode, this, 1, &decode_handle, cpuDecode);
-    xTaskCreatePinnedToCore(&voidDownloadTask, "download", stackDownload, this, 1, &download_handle, cpuDownload);
-  }
-
   ~WebRadio() {
     if (download_handle)
       vTaskDelete(download_handle);

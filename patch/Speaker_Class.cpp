@@ -52,33 +52,32 @@ namespace m5
     if (_cfg.use_dac && _cfg.i2s_port != I2S_NUM_0) { return ESP_FAIL; }
 #endif
 
-  i2s_config_t i2s_config;
-  memset(&i2s_config, 0, sizeof(i2s_config_t));
-  // Settings for ES9038Q2M VR1.07 DAC Board(eBay item number:263908779821)
-  i2s_config = {
-      .mode                 = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
-      .sample_rate          = 48000,
-      .bits_per_sample      = _cfg.bits_per_sample,
-      .channel_format       = _cfg.stereo || _cfg.buzzer ? I2S_CHANNEL_FMT_RIGHT_LEFT : I2S_CHANNEL_FMT_ONLY_RIGHT,
-      .communication_format = I2S_COMM_FORMAT_I2S,   // I2S communication format I2S
-      .intr_alloc_flags     = ESP_INTR_FLAG_LEVEL1,  // default interrupt priority
-      .dma_buf_count        = _cfg.dma_buf_count,
-      .dma_buf_len          = _cfg.dma_buf_len,
-      .use_apll             = false,  // I2S using APLL as main I2S clock, enable it to get accurate clock
-      .tx_desc_auto_clear   = true    // I2S auto clear tx descriptor if there is underflow condition
-  };
+    i2s_config_t i2s_config;
+    memset(&i2s_config, 0, sizeof(i2s_config_t));
+    // Settings for ES9038Q2M VR1.07 DAC Board(eBay item number:263908779821)
+    i2s_config = {
+        .mode                 = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
+        .sample_rate          = 48000,
+        .bits_per_sample      = _cfg.bits_per_sample,
+        .channel_format       = _cfg.stereo || _cfg.buzzer ? I2S_CHANNEL_FMT_RIGHT_LEFT : I2S_CHANNEL_FMT_ONLY_RIGHT,
+        .communication_format = I2S_COMM_FORMAT_I2S,   // I2S communication format I2S
+        .intr_alloc_flags     = ESP_INTR_FLAG_LEVEL1,  // default interrupt priority
+        .dma_buf_count        = _cfg.dma_buf_count,
+        .dma_buf_len          = _cfg.dma_buf_len,
+        .use_apll             = false,  // I2S using APLL as main I2S clock, enable it to get accurate clock
+        .tx_desc_auto_clear   = true    // I2S auto clear tx descriptor if there is underflow condition
+    };
 
-    i2s_pin_config_t pin_config;
-    memset(&pin_config, ~0u, sizeof(i2s_pin_config_t)); /// all pin set to I2S_PIN_NO_CHANGE
-    pin_config.bck_io_num     = _cfg.pin_bck;
-    pin_config.ws_io_num      = _cfg.pin_ws;
-    pin_config.data_out_num   = _cfg.pin_data_out;
+  i2s_pin_config_t pin_config;
+  memset(&pin_config, ~0u, sizeof(i2s_pin_config_t));  /// all pin set to I2S_PIN_NO_CHANGE
+  pin_config.bck_io_num   = _cfg.pin_bck;
+  pin_config.ws_io_num    = _cfg.pin_ws;
+  pin_config.data_out_num = _cfg.pin_data_out;
 
-    esp_err_t err;
-    if (ESP_OK != (err = i2s_driver_install(_cfg.i2s_port, &i2s_config, 0, nullptr)))
-    {
-      i2s_driver_uninstall(_cfg.i2s_port);
-      err = i2s_driver_install(_cfg.i2s_port, &i2s_config, 0, nullptr);
+  esp_err_t err;
+  if (ESP_OK != (err = i2s_driver_install(_cfg.i2s_port, &i2s_config, 0, nullptr))) {
+    i2s_driver_uninstall(_cfg.i2s_port);
+    err = i2s_driver_install(_cfg.i2s_port, &i2s_config, 0, nullptr);
     }
     if (err != ESP_OK) { return err; }
 
@@ -181,7 +180,7 @@ namespace m5
     calcClockDiv(&div_a, &div_b, &div_n, base, div_m * bits * self->_cfg.sample_rate);
 
     /// 実際に設定されたサンプリングレートの算出を行う;
-    //const int32_t spk_sample_rate_x256 = (float)base * SAMPLERATE_MUL / ((float)(div_b * div_m * bits) / (float)div_a + (div_n * div_m * bits));
+    // const int32_t spk_sample_rate_x256 = (float)base * SAMPLERATE_MUL / ((float)(div_b * div_m * bits) / (float)div_a + (div_n * div_m * bits));
     const int32_t spk_sample_rate_x256 = 160000 * 256;
     //  ESP_EARLY_LOGW("Speaker_Class", "sample rate:%d Hz = %d MHz/(%d+(%d/%d))/%d/%d = %d Hz", self->_cfg.sample_rate, base / 1000000, div_n, div_b, div_a, div_m, bits, spk_sample_rate_x256 / SAMPLERATE_MUL);
 

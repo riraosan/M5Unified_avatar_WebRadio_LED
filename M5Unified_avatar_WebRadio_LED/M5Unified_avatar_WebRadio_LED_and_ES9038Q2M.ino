@@ -220,7 +220,7 @@ public:
 
 static constexpr size_t     WAVE_SIZE = 320;
 static AudioOutputM5Speaker out(&M5.Speaker, m5spk_virtual_channel);
-static SimpleWebRadio       radio(&out, PRO_CPU_NUM);
+static SimpleWebRadio       radio(&out, PRO_CPU_NUM, 16 * 1024);
 static fft_t                fft;
 static bool                 fft_enabled  = false;
 static bool                 wave_enabled = false;
@@ -558,6 +558,7 @@ void setupAvatar(void) {
 
 void setupDisplay(void) {
   display.begin();
+  display.fillScreen(TFT_BLACK);
   display.startWrite();
 
   if (display.width() < display.height()) {
@@ -640,7 +641,7 @@ void setupAudio(void) {
 
   {
     uint32_t nvs_handle;
-    if (!nvs_open("SimpleWebRadio", NVS_READONLY, &nvs_handle)) {
+    if (!nvs_open("WebRadio", NVS_READONLY, &nvs_handle)) {
       size_t volume;
       nvs_get_u32(nvs_handle, "volume", &volume);
       nvs_close(nvs_handle);
@@ -699,10 +700,12 @@ void doubleClick(Button2& btn) {
 }
 
 void longClick(Button2& btn) {
-  display.fillScreen(TFT_BLACK);
+  delete avatar;
+  out.stop();
+  out.flush();
   M5.Speaker.stop();
   M5.Speaker.end();
-  delay(1000);
+  display.fillScreen(TFT_BLACK);
   ESP.restart();
 }
 
@@ -718,6 +721,14 @@ void click(Button2& btn) {
     M5.Speaker.tone(1000, 100);
   } else {
     M5.Speaker.tone(800, 100);
+  }
+
+  {
+    uint32_t nvs_handle;
+    if (!nvs_open("WebRadio", NVS_READWRITE, &nvs_handle)) {
+      nvs_set_u32(nvs_handle, "volume", v);
+      nvs_close(nvs_handle);
+    }
   }
 }
 
