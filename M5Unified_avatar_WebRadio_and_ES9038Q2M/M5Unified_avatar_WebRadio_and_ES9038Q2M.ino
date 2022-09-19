@@ -1,18 +1,23 @@
 
-// 2022-06-18 MIT https://twitter.com/riraosan_0901
+// 2022-09-19 MIT https://twitter.com/riraosan_0901
 
-// LEDレベルメータを使用する;
-//#define USE_FASTLED
 #define AVATAR
 
 #define WIFI_SSID "Buffalo-C130"
 #define WIFI_PASS "nnkxnpshmhai6"
 
+#include <HTTPClient.h>
 #include <math.h>
 #include <WiFi.h>
 #include <nvs.h>
 
-#include "WebRadio_Simple.hpp"
+/// need ESP8266Audio library. ( URL : https://github.com/earlephilhower/ESP8266Audio/ )
+#include <AudioOutput.h>
+#include <AudioFileSourceICYStream.h>
+#include <AudioFileSource.h>
+#include <AudioFileSourceBuffer.h>
+#include <AudioGeneratorMP3.h>
+#include <AudioOutputI2S.h>
 
 #include <Button2.h>
 #define BUTTON_PIN26 26  // Button Unit RED
@@ -23,10 +28,15 @@ static Button2 bRed;
 static Button2 bBlue;
 static Button2 Btn;
 
+#include <M5UnitLCD.h>
+#include <M5UnitOLED.h>
 #include <M5Unified.h>
 #include <ESP32_8BIT_CVBS.h>
 static ESP32_8BIT_CVBS display;
 static M5Canvas        canvas;
+
+#define W_SCALE 1.00
+#define H_SCALE 1.00
 
 static uint32_t lcd_width;
 static uint32_t lcd_height;
@@ -35,58 +45,23 @@ static int32_t  offset_y;
 
 #include "Avatar.h"
 
-#ifdef USE_FASTLED
-#include <FastLED.h>
-
-// How many leds in your strip?
-#define NUM_LEDS 10
-#if defined(ARDUINO_M5STACK_Core2)
-#define DATA_PIN 25
-#else
-#define DATA_PIN 15
-#endif
-
-// Define the array of leds
-CRGB leds[NUM_LEDS];
-CRGB led_table[NUM_LEDS / 2] = {CRGB::Blue, CRGB::Green, CRGB::Yellow, CRGB::Orange, CRGB::Red};
-
-void turn_off_led() {
-  // Now turn the LED off, then pause
-  for (int i = 0; i < NUM_LEDS; i++) leds[i] = CRGB::Black;
-  FastLED.show();
-}
-
-void fill_led_buff(CRGB color) {
-  // Now turn the LED off, then pause
-  for (int i = 0; i < NUM_LEDS; i++) leds[i] = color;
-}
-
-void clear_led_buff() {
-  // Now turn the LED off, then pause
-  for (int i = 0; i < NUM_LEDS; i++) leds[i] = CRGB::Black;
-}
-
-void level_led(int level1, int level2) {
-  if (level1 > NUM_LEDS / 2) level1 = NUM_LEDS / 2;
-  if (level2 > NUM_LEDS / 2) level2 = NUM_LEDS / 2;
-  clear_led_buff();
-  for (int i = 0; i < level1; i++) {
-    leds[NUM_LEDS / 2 - 1 - i] = led_table[i];
-  }
-  for (int i = 0; i < level2; i++) {
-    leds[i + NUM_LEDS / 2] = led_table[i];
-  }
-  FastLED.show();
-}
-#else
-void turn_off_led() {}
-// void fill_led_buff(CRGB color) {}
-void clear_led_buff() {}
-void level_led(int level1, int level2) {}
-#endif
-
 /// set M5Speaker virtual channel (0-7)
 static constexpr uint8_t m5spk_virtual_channel = 0;
+
+/// set web radio station url
+static constexpr const char* station_list[][2] =
+    {
+        {"Japan Hits", "http://igor.torontocast.com:1025/stream"},
+        {"J-Pop Powerplay", "http://kathy.torontocast.com:3560/stream"},
+        {"J-Pop Powerplay Kawaii", "http://kathy.torontocast.com:3060/stream"},
+        {"J-Pop Sakura 懐かしい", "http://igor.torontocast.com:1710/stream"},
+        {"J-Rock Powerplay", "http://kathy.torontocast.com:3340/stream"},
+        {"J-Club Hip Hop", "http://kathy.torontocast.com:3350/stream"},
+        {"Jazz Sakura", "http://kathy.torontocast.com:3330/stream"},
+        {"Lite Favorites", "http://naxos.cdnstream.com:80/1255_128"},
+};
+
+static constexpr const size_t stations = sizeof(station_list) / sizeof(station_list[0]);
 
 class AudioOutputM5Speaker : public AudioOutput {
 public:
@@ -94,6 +69,7 @@ public:
     _m5sound    = m5sound;
     _virtual_ch = virtual_sound_channel;
   }
+
   virtual ~AudioOutputM5Speaker(void){};
   virtual bool begin(void) override { return true; }
   virtual bool ConsumeSample(int16_t sample[2]) override {
@@ -108,6 +84,7 @@ public:
     flush();
     return false;
   }
+
   virtual void flush(void) override {
     if (_tri_buffer_index) {
       _m5sound->playRaw(_tri_buffer[_tri_index], _tri_buffer_index, hertz, true, 1, _virtual_ch);
@@ -116,6 +93,7 @@ public:
       ++_update_count;
     }
   }
+
   virtual bool stop(void) override {
     flush();
     _m5sound->stop(_virtual_ch);
@@ -218,22 +196,30 @@ public:
   }
 };
 
-static constexpr size_t     WAVE_SIZE = 320;
-static AudioOutputM5Speaker out(&M5.Speaker, m5spk_virtual_channel);
-static SimpleWebRadio       radio(&out, PRO_CPU_NUM, 16 * 1024);
-static fft_t                fft;
-static bool                 fft_enabled  = false;
-static bool                 wave_enabled = false;
-static uint16_t             prev_y[(FFT_SIZE / 2) + 1];
-static uint16_t             peak_y[(FFT_SIZE / 2) + 1];
-static int16_t              wave_y[WAVE_SIZE];
-static int16_t              wave_h[WAVE_SIZE];
-static int16_t              raw_data[WAVE_SIZE * 2];
-static int                  header_height     = 0;
-static char                 stream_title[128] = {0};
-static const char*          meta_text[2]      = {nullptr, stream_title};
-static const size_t         meta_text_num     = sizeof(meta_text) / sizeof(meta_text[0]);
-static uint8_t              meta_mod_bits     = 0;
+static constexpr const int       preallocateBufferSize = 8 * 1024;
+static constexpr const int       preallocateCodecSize  = 29192;  // MP3 codec max mem needed
+static void*                     preallocateBuffer     = nullptr;
+static void*                     preallocateCodec      = nullptr;
+static constexpr size_t          WAVE_SIZE             = 320;
+static AudioOutputM5Speaker      out(&M5.Speaker, m5spk_virtual_channel);
+static AudioGenerator*           decoder = nullptr;
+static AudioFileSourceICYStream* file    = nullptr;
+static AudioFileSourceBuffer*    buff    = nullptr;
+static fft_t                     fft;
+static bool                      fft_enabled  = false;
+static bool                      wave_enabled = false;
+static uint16_t                  prev_y[(FFT_SIZE / 2) + 1];
+static uint16_t                  peak_y[(FFT_SIZE / 2) + 1];
+static int16_t                   wave_y[WAVE_SIZE];
+static int16_t                   wave_h[WAVE_SIZE];
+static int16_t                   raw_data[WAVE_SIZE * 2];
+static int                       header_height     = 0;
+static size_t                    station_index     = 0;
+static char                      stream_title[128] = {0};
+static const char*               meta_text[2]      = {nullptr, stream_title};
+static const size_t              meta_text_num     = sizeof(meta_text) / sizeof(meta_text[0]);
+static uint8_t                   meta_mod_bits     = 0;
+static volatile size_t           playindex         = ~0u;
 
 static void MDCallback(void* cbData, const char* type, bool isUnicode, const char* string) {
   (void)cbData;
@@ -243,8 +229,52 @@ static void MDCallback(void* cbData, const char* type, bool isUnicode, const cha
   }
 }
 
-static void StCallback(void* cbData, int code, const char* string) {
-  Serial.println(string);
+static void stop(void) {
+  if (decoder) {
+    decoder->stop();
+    delete decoder;
+    decoder = nullptr;
+  }
+
+  if (buff) {
+    buff->close();
+    delete buff;
+    buff = nullptr;
+  }
+  if (file) {
+    file->close();
+    delete file;
+    file = nullptr;
+  }
+  out.stop();
+}
+
+static void play(size_t index) {
+  playindex = index;
+}
+
+static void decodeTask(void*) {
+  for (;;) {
+    delay(1);
+    if (playindex != ~0u) {
+      auto index = playindex;
+      playindex  = ~0u;
+      stop();
+      meta_text[0]    = station_list[index][0];
+      stream_title[0] = 0;
+      meta_mod_bits   = 3;
+      file            = new AudioFileSourceICYStream(station_list[index][1]);
+      file->RegisterMetadataCB(MDCallback, (void*)"ICY");
+      buff    = new AudioFileSourceBuffer(file, preallocateBuffer, preallocateBufferSize);
+      decoder = new AudioGeneratorMP3(preallocateCodec, preallocateCodecSize);
+      decoder->begin(buff, &out);
+    }
+    if (decoder && decoder->isRunning()) {
+      if (!decoder->loop()) {
+        decoder->stop();
+      }
+    }
+  }
 }
 
 static uint32_t bgcolor(M5Canvas* gfx, int y) {
@@ -257,7 +287,7 @@ static uint32_t bgcolor(M5Canvas* gfx, int y) {
       return 0x666666u;
     }
   }
-  return gfx->color888(v + 2, v, v + 6);
+  return gfx->color565(v + 2, v, v + 6);
 }
 
 static void gfxSetup(M5Canvas* gfx) {
@@ -274,6 +304,8 @@ static void gfxSetup(M5Canvas* gfx) {
   gfx->fillRect(0, 6, gfx->width(), 2, TFT_BLACK);
 
   header_height = (gfx->height() > 80) ? 33 : 21;
+
+  log_i("gfx->height = %d", gfx->height());
 
   fft_enabled  = true;
   wave_enabled = false;
@@ -314,7 +346,7 @@ void gfxLoop(M5Canvas* gfx) {
         gfx->print(meta_text[id]);
         gfx->print(" ");  // Garbage data removal when UTF8 characters are broken in the middle.
       }
-      canvas.pushSprite(&display, offset_x, offset_y);
+      canvas.pushRotateZoom(&display, 0, W_SCALE, H_SCALE);
     }
   } else {
     static int title_x;
@@ -364,7 +396,7 @@ void gfxLoop(M5Canvas* gfx) {
         }
       } while (tx < gfx->width());
       --title_x;
-      canvas.pushSprite(&display, offset_x, offset_y);
+      canvas.pushRotateZoom(&display, 0, W_SCALE, H_SCALE);
     }
   }
 
@@ -407,9 +439,7 @@ void gfxLoop(M5Canvas* gfx) {
         }
       }
 
-      canvas.pushSprite(&display, offset_x, offset_y);
-
-      level_led(levels[0] * 8 / INT16_MAX, levels[1] * 8 / INT16_MAX);
+      // canvas.pushRotateZoom(&display, 0, W_SCALE, H_SCALE);
 
       // draw FFT level meter
       fft.exec(raw_data);
@@ -430,7 +460,6 @@ void gfxLoop(M5Canvas* gfx) {
       for (size_t bx = 0; bx <= xe; ++bx) {
         size_t x = bx * bw;
         if ((x & 7) == 0) {
-          // canvas.pushSprite(&display, offset_x, offset_y); //NG レベルメーターの描画速度を下げてしまう
           taskYIELD();
         }
         int32_t f = fft.get(bx);
@@ -499,7 +528,7 @@ void gfxLoop(M5Canvas* gfx) {
         }
 #endif
       }
-      canvas.pushSprite(&display, offset_x, offset_y);
+      canvas.pushRotateZoom(&display, 0, W_SCALE, H_SCALE);
     }
   }
 
@@ -509,7 +538,7 @@ void gfxLoop(M5Canvas* gfx) {
     int        x = v * (gfx->width()) >> 8;
     if (px != x) {
       gfx->fillRect(x, 6, px - x, 2, px < x ? 0xAAFFAAu : 0u);
-      canvas.pushSprite(&display, offset_x, offset_y);
+      // canvas.pushRotateZoom(&display, 0, 1.0, 1.0);
       px = x;
     }
   }
@@ -568,19 +597,16 @@ void setupDisplay(void) {
   lcd_width  = display.width();
   lcd_height = display.height();
 
-  // offset_x = display.width() - (display.width() >> 2) - 20;
-  // offset_y = display.height() - (display.height() >> 2) - 5;
-  offset_x = 0;
-  offset_y = 8;
+  display.setPivot((lcd_width >> 1) + 3, (lcd_height >> 3) + 10);
 }
 
 void setupLevelMeter(void) {
   canvas.setColorDepth(display.getColorDepth());
   canvas.setFont(&fonts::lgfxJapanGothic_12);
-  if (canvas.createSprite(display.width(), display.height() >> 2)) {
+  if (canvas.createSprite(lcd_width, lcd_height >> 2)) {
     canvas.clear();
     gfxSetup(&canvas);
-    canvas.pushSprite(&display, offset_x, offset_y);
+    canvas.pushRotateZoom(&display, 0, W_SCALE, H_SCALE);
   } else {
     log_e("can't allocate.");
   }
@@ -597,12 +623,11 @@ void setupWiFi(void) {
   WiFi.begin();
 #endif
 
-  // canvas.setCursor(0, 8);
   canvas.print(" Connecting");
   // Try forever
   while (WiFi.status() != WL_CONNECTED) {
     canvas.print(".");
-    canvas.pushSprite(&display, offset_x, offset_y);
+    canvas.pushRotateZoom(&display, 0, W_SCALE, H_SCALE);
     display.display();
     delay(100);
   }
@@ -621,7 +646,7 @@ void setupAudio(void) {
   {  // custom setting
     auto spk_cfg = M5.Speaker.config();
     //  sample_rateを上げると、CPU負荷が上がる代わりに音質が向上します。
-    spk_cfg.sample_rate      = 160000 * 2;  // default:64000 (64kH z)  e.g. 48000 , 50000 , 80000 , 96000 , 100000 , 128000 , 144000 , 192000 , 200000
+    spk_cfg.sample_rate      = 144000 * 2;  // default:64000 (64kH z)  e.g. 48000 , 50000 , 80000 , 96000 , 100000 , 128000 , 144000 , 192000 , 200000
     spk_cfg.task_pinned_core = APP_CPU_NUM;
     spk_cfg.i2s_port         = i2s_port_t::I2S_NUM_1;  // CVBS use IS2_NUM_0. Audio use I2S_NUM_1.
     spk_cfg.pin_bck          = 33;
@@ -631,10 +656,8 @@ void setupAudio(void) {
     spk_cfg.use_dac          = false;  // about internal DAC
 
     // for ES9038Q2M VR1.07 DAC Board
-    spk_cfg.dma_buf_count   = 40;
-    spk_cfg.dma_buf_len     = 64;
-    spk_cfg.bits_per_sample = I2S_BITS_PER_SAMPLE_32BIT;  // DACのサンプリングビットが32の方はこちら
-    // spk_cfg.bits_per_sample  = I2S_BITS_PER_SAMPLE_16BIT; //DACのサンプリングビットが16の方はこちら
+    spk_cfg.dma_buf_count = 64;
+    spk_cfg.dma_buf_len   = 64;
 
     M5.Speaker.config(spk_cfg);
   }
@@ -648,54 +671,28 @@ void setupAudio(void) {
       M5.Speaker.setChannelVolume(m5spk_virtual_channel, volume);
     }
   }
-}
 
-void setupFastLED(void) {
-#ifdef USE_FASTLED
-  if (M5.getBoard() == m5::board_t::board_M5Stack) {
-    FastLED.addLeds<SK6812, GPIO_NUM_15, GRB>(leds, NUM_LEDS);  // GRB ordering is typical
-  } else if (M5.getBoard() == m5::board_t::board_M5StackCore2) {
-    FastLED.addLeds<SK6812, GPIO_NUM_25, GRB>(leds, NUM_LEDS);  // GRB ordering is typical
-  }
-  FastLED.setBrightness(32);
-  level_led(5, 5);
-  FastLED.show();
-#endif
-}
-
-void setupWebRadio(void) {
-  radio.onPlay = [](const char* station_name, const size_t station_idx) {
-    Serial.printf("onPlay:%d %s\n", station_idx, station_name);
-    meta_text[0]    = station_name;
-    stream_title[0] = 0;
-    meta_mod_bits   = 3;
-  };
-
-  radio.onChunk = [](const char* text) {
-    Serial.println(text);
-  };
-
-  radio.RegisterMetadataCB(MDCallback, (void*)"ICY");
-  radio.RegisterStatusCB(StCallback, (void*)"mp3");
-  if (!radio.begin()) {
-    Serial.println("failed: radio.begin()");
-    for (;;)
-      ;
-  }
-  radio.play();
+  xTaskCreatePinnedToCore(decodeTask, "decodeTask", 4096, nullptr, 5, nullptr, APP_CPU_NUM);
 }
 
 void pressed(Button2& btn) {
   M5.Speaker.tone(440, 100);
 }
 
-void doubleClick(Button2& btn) {
+void longClickExternalButton(Button2& btn) {
   if (btn == bRed) {
     M5.Speaker.tone(1000, 100);
-    radio.play(true);
+    if (++station_index >= stations) {
+      station_index = 0;
+    }
+    play(station_index);
+
   } else if (btn == bBlue) {
     M5.Speaker.tone(800, 100);
-    radio.play(false);
+    if (station_index == 0) {
+      station_index = stations;
+    }
+    play(--station_index);
   }
 }
 
@@ -738,17 +735,17 @@ void tripleClick(Button2& btn) {
 
 void setupButton(void) {
   bRed.setDoubleClickTime(300);
+  bRed.setLongClickTime(1000);
   bRed.setPressedHandler(pressed);
   bRed.setClickHandler(click);
-  bRed.setDoubleClickHandler(doubleClick);
-  bRed.setTripleClickHandler(tripleClick);
+  bRed.setLongClickDetectedHandler(longClickExternalButton);
   bRed.begin(BUTTON_PIN26);
 
   bBlue.setDoubleClickTime(300);
+  bBlue.setLongClickTime(1000);
   bBlue.setPressedHandler(pressed);
   bBlue.setClickHandler(click);
-  bBlue.setDoubleClickHandler(doubleClick);
-  bBlue.setTripleClickHandler(tripleClick);
+  bBlue.setLongClickDetectedHandler(longClickExternalButton);
   bBlue.begin(BUTTON_PIN32);
 
   Btn.setPressedHandler(pressed);
@@ -761,11 +758,10 @@ void setup(void) {
   setupDisplay();
   setupAudio();
   setupLevelMeter();
-  setupAvatar();
-  // setupFastLED();
-
+  // setupAvatar();
   setupWiFi();
-  setupWebRadio();
+
+  play(station_index);
 
   M5.Speaker.begin();
 }

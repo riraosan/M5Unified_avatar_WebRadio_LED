@@ -124,8 +124,7 @@ void Avatar::init() {
       ctx,        /* Task input parameter */
       1,          /* Priority of the task */
       NULL,       /* Task handle. */
-      APP_CPU_NUM); //modify by @riraosan
-      //    0);                   /* Core where the task should run */
+      PRO_CPU_NUM); //modify by @riraosan
 
   xTaskCreate(saccade,      /* Function to implement the task */
               "saccade",    /* Name of the task */
